@@ -1,53 +1,62 @@
-# Compiled Output
-dist
-tmp
-/out-tsc
-
-# Project Dependencies
+# Dependencies
 node_modules
+.pnp
+.pnp.js
 
-# IDEs and Editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
+# Testing
+coverage
 
-# IDE - VSCode
-.vs/*
+# Next.js
+.next/
+out/
+build
+
+# Production
+dist
+
+# Misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Vercel
+.vercel
+
+# Convex
+convex/_generated/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
+.idea
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+.vs
 
-# Miscellaneous
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
-
-# System Files
-.DS_Store
-Thumbs.db
-
-# Generated Files
-.nx
+# SWC
 .swc
-.turbo
-fly.toml
-stats.html
 
-# Environment Variables
-*.env*
-!.env.example
+# Turbo
+.turbo
 
 # Lingui Compiled Messages
-apps/client/src/locales/_build/
-apps/client/src/locales/*/messages.*js
+locales/_build/
+locales/*/messages.*js

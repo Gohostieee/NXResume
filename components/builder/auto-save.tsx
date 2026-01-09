@@ -6,10 +6,11 @@ import { api } from "@/convex/_generated/api";
 import { useResumeStore } from "@/stores/resume";
 import { getResumeSnapshot, useAutoSaveStore } from "@/stores/auto-save";
 import { useDebouncedCallback } from "use-debounce";
-import type { Id } from "@/convex/_generated/dataModel";
 
 export function AutoSave() {
-  const resume = useResumeStore((state) => state.resume);
+  const resumeId = useResumeStore((state) => state.resume?.id || state.resume?._id);
+  const hasResumeData = useResumeStore((state) => Boolean(state.resume?.data));
+  const resumeSnapshot = useResumeStore((state) => getResumeSnapshot(state.resume));
   const updateResume = useMutation(api.resumes.update);
   const setSaveFunction = useAutoSaveStore((state) => state.setSaveFunction);
   const setLastSaved = useAutoSaveStore((state) => state.setLastSaved);
@@ -25,32 +26,27 @@ export function AutoSave() {
 
   // Initialize lastSaved when resume first loads
   useEffect(() => {
-    const resumeId = resume?.id || resume?._id;
-    if (!resumeId || !resume?.data) return;
+    if (!resumeId || !hasResumeData) return;
 
     if (lastResumeIdRef.current !== resumeId) {
-      const data = getResumeSnapshot(resume);
       lastResumeIdRef.current = resumeId;
-      setLastSaved(data);
+      setLastSaved(resumeSnapshot);
       setPendingSave(false);
     }
-  }, [resume?.id, resume?._id, resume?.data, setLastSaved, setPendingSave]);
+  }, [resumeId, hasResumeData, resumeSnapshot, setLastSaved, setPendingSave]);
 
   // Debounced save for typing - 2 seconds after last change
   const debouncedSave = useDebouncedCallback(triggerSave, 2000, { maxWait: 5000 });
 
   // Watch for any changes in the resume data (backup auto-save)
   useEffect(() => {
-    const resumeId = resume?.id || resume?._id;
-    if (!resumeId || !resume?.data) return;
-
-    const currentData = getResumeSnapshot(resume);
+    if (!resumeId || !hasResumeData) return;
 
     // Trigger debounced save if data changed
-    if (currentData !== lastSaved) {
+    if (resumeSnapshot !== lastSaved) {
       debouncedSave();
     }
-  }, [resume, lastSaved, debouncedSave]);
+  }, [resumeId, hasResumeData, resumeSnapshot, lastSaved, debouncedSave]);
 
   // Save on unmount (before leaving page)
   useEffect(() => {

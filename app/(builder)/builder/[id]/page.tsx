@@ -20,6 +20,7 @@ export default function BuilderPage() {
     isAuthLoaded && isSignedIn ? { id: params.id as Id<"resumes"> } : "skip"
   );
   const setResume = useResumeStore((state) => state.setResume);
+  const hasResumeInStore = useResumeStore((state) => Boolean(state.resume?.data));
 
   // Give auth a moment to load before showing "not found"
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function BuilderPage() {
   useEffect(() => {
     if (resume) {
       setResume(resume as any);
+      useResumeStore.temporal.getState().clear();
     }
   }, [resume, setResume]);
 
@@ -57,7 +59,7 @@ export default function BuilderPage() {
   }
 
   // Query is loading
-  if (resume === undefined) {
+  if (resume === undefined && !hasResumeInStore) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-foreground/60">Loading resume...</div>

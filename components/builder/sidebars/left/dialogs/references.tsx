@@ -77,10 +77,9 @@ export const ReferencesDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Recommendation</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder="A brief quote or recommendation from this reference..."
-                  rows={4}
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
               <FormMessage />

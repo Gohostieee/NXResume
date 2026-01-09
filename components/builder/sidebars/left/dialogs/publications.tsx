@@ -91,10 +91,9 @@ export const PublicationsDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Summary</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder="Brief description of the publication..."
-                  rows={4}
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
               <FormMessage />

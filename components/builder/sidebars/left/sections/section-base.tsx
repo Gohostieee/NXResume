@@ -21,7 +21,7 @@ import type { SectionItem, SectionKey, SectionWithItem } from "@/lib/schema";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import get from "lodash.get";
-import { useState } from "react";
+import { SectionOptions } from "./section-options";
 
 import { useDialog } from "@/stores/dialog";
 import { useResumeStore } from "@/stores/resume";
@@ -35,7 +35,8 @@ type Props<T extends SectionItem> = {
 
 export const SectionBase = <T extends SectionItem>({ id, title, description }: Props<T>) => {
   const { open } = useDialog(id);
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = useResumeStore((state) => state.collapsedSections[id] ?? false);
+  const toggleCollapseSection = useResumeStore((state) => state.toggleCollapseSection);
 
   const setValue = useResumeStore((state) => state.setValue);
   const section = useResumeStore(
@@ -89,23 +90,27 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
   return (
     <section id={id} className="space-y-3">
       <header className="flex items-center justify-between">
-        <button
-          type="button"
-          className="flex items-center gap-2 text-left"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          <CaretRight
-            className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")}
-          />
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={collapsed ? "Expand section" : "Collapse section"}
+            onClick={() => {
+              toggleCollapseSection(id);
+            }}
+          >
+            <CaretRight className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")} />
+          </Button>
           <h3 className="font-semibold">{section.name}</h3>
-          <span className="text-xs text-muted-foreground">
-            ({section.items.length})
-          </span>
-        </button>
+          <span className="text-xs text-muted-foreground">({section.items.length})</span>
+        </div>
 
-        <Button size="sm" variant="ghost" onClick={onCreate}>
-          <Plus className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <SectionOptions id={id} />
+          <Button size="sm" variant="ghost" onClick={onCreate}>
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       {!collapsed && (
@@ -142,6 +147,15 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
                 ))}
               </SortableContext>
             </DndContext>
+          )}
+
+          {section.items.length > 0 && (
+            <div className="flex justify-end pt-2">
+              <Button size="sm" variant="outline" onClick={onCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add a new item
+              </Button>
+            </div>
           )}
         </div>
       )}

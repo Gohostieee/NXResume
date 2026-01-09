@@ -94,10 +94,9 @@ export const ProjectsDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Summary</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder="Detailed description of the project, your role, technologies used..."
-                  rows={4}
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
               <FormMessage />

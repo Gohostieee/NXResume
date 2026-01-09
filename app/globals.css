@@ -1,3 +1,5 @@
+@import url("https://unpkg.com/@phosphor-icons/web@2.0.3/src/bold/style.css");
+
 /* Tailwind CSS */
 @tailwind base;
 @tailwind components;

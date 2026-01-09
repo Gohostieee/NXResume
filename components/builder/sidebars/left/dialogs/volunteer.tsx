@@ -105,10 +105,9 @@ export const VolunteerDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Summary</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder="Describe your volunteer work, responsibilities, and impact..."
-                  rows={4}
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
               <FormMessage />

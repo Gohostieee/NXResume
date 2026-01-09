@@ -91,7 +91,10 @@ export const CertificationsDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Summary</FormLabel>
               <FormControl>
-                <Textarea {...field} placeholder="Description of the certification..." rows={3} />
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

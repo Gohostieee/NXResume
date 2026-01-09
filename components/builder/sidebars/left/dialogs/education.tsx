@@ -120,10 +120,9 @@ export const EducationDialog = () => {
             <FormItem className="sm:col-span-2">
               <FormLabel>Summary</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder="Describe your coursework, achievements, activities..."
-                  rows={4}
+                <RichInput
+                  content={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
               <FormMessage />

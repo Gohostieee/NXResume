@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useResumeStore } from "@/stores/resume";
 import { useAutoSaveStore } from "@/stores/auto-save";
 import { Label } from "@/components/ui/label";
@@ -9,15 +12,19 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { HexColorPicker } from "react-colorful";
-import { cn } from "@/lib/utils";
+import { cn, fonts, localFonts } from "@/lib/utils";
 import { colors } from "@/constants/colors";
 import { FileJs, FilePdf, SpinnerGap, Copy, Check } from "@phosphor-icons/react";
 import { saveAs } from "file-saver";
+import { LayoutSection } from "./sections/layout-section";
+import { StatisticsSection } from "./sections/statistics-section";
+import { InformationSection } from "./sections/information-section";
 
 const TEMPLATES = [
   { value: "azurill", label: "Azurill" },
@@ -38,6 +45,8 @@ const PAGE_FORMATS = [
   { value: "a4", label: "A4" },
   { value: "letter", label: "Letter" },
 ];
+
+const MAX_FONT_RESULTS = 200;
 
 // Color picker input component with onBlur save
 function ColorPickerInput({
@@ -83,6 +92,10 @@ export function RightSidebar() {
   const triggerSave = useAutoSaveStore((state) => state.triggerSave);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rawCopied, setRawCopied] = useState(false);
+  const currentUser = useQuery(api.users.getCurrentUser);
+  const incrementDownloads = useMutation(api.statistics.incrementDownloads);
+  const resumeId = resume?.id || resume?._id;
 
   // Save on blur handler
   const handleBlur = () => {
@@ -97,7 +110,7 @@ export function RightSidebar() {
 
   if (!resume?.data) {
     return (
-      <aside className="w-72 overflow-hidden border-l">
+      <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l">
         <div className="flex h-full items-center justify-center">
           <div className="text-foreground/60">Loading...</div>
         </div>
@@ -115,9 +128,31 @@ export function RightSidebar() {
   const typography = metadata?.typography || { font: { family: "IBM Plex Serif", size: 14 }, lineHeight: 1.5 };
   const css = metadata?.css || { value: "", visible: false };
   const notes = metadata?.notes || "";
+  const username = currentUser?.username;
+  const origin = useMemo(() => (typeof window !== "undefined" ? window.location.origin : ""), []);
+  const publicUrl = username ? `${origin}/${username}/${resume.slug}` : "";
+  const rawJsonUrl = username ? `${origin}/api/resume/public/${username}/${resume.slug}/raw` : "";
+
+  const fontFamily = typography.font?.family || "IBM Plex Serif";
+  const [fontOpen, setFontOpen] = useState(false);
+  const fontFamilies = useMemo(() => {
+    const families = new Set<string>([...localFonts, ...fonts.map((font) => font.family)]);
+    return Array.from(families).sort((a, b) => a.localeCompare(b));
+  }, []);
+  const fontMatches = useMemo(() => {
+    const query = fontFamily.trim().toLowerCase();
+    const matches = query
+      ? fontFamilies.filter((family) => family.toLowerCase().includes(query))
+      : fontFamilies;
+
+    return {
+      visible: matches.slice(0, MAX_FONT_RESULTS),
+      hasMore: matches.length > MAX_FONT_RESULTS,
+    };
+  }, [fontFamily, fontFamilies]);
 
   const handleJsonExport = () => {
-    const filename = `resume-${resume.id}.json`;
+    const filename = `resume-${resumeId || "export"}.json`;
     const resumeJSON = JSON.stringify(resume.data, null, 2);
     saveAs(new Blob([resumeJSON], { type: "application/json" }), filename);
   };
@@ -125,7 +160,8 @@ export function RightSidebar() {
   const handlePdfExport = async () => {
     setIsPdfLoading(true);
     try {
-      const response = await fetch(`/api/resume/${resume.id}/print`, {
+      if (!resumeId) throw new Error("Missing resume id");
+      const response = await fetch(`/api/resume/${resumeId}/print`, {
         method: "POST",
       });
 
@@ -134,7 +170,13 @@ export function RightSidebar() {
       }
 
       const blob = await response.blob();
-      saveAs(blob, `resume-${resume.id}.pdf`);
+      saveAs(blob, `resume-${resumeId}.pdf`);
+
+      if (resume.visibility === "public" && resumeId) {
+        incrementDownloads({ resumeId: resumeId as Id<"resumes"> }).catch((error) => {
+          console.error("Failed to increment downloads:", error);
+        });
+      }
     } catch (error) {
       console.error("Failed to export PDF:", error);
     } finally {
@@ -143,23 +185,28 @@ export function RightSidebar() {
   };
 
   const handleCopyLink = async () => {
-    if (resume.visibility === "public") {
-      const url = `${window.location.origin}/${resume.userId}/${resume.slug}`;
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (resume.visibility !== "public" || !publicUrl) return;
+    await navigator.clipboard.writeText(publicUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyRawLink = async () => {
+    if (resume.visibility !== "public" || !rawJsonUrl) return;
+    await navigator.clipboard.writeText(rawJsonUrl);
+    setRawCopied(true);
+    setTimeout(() => setRawCopied(false), 2000);
   };
 
   return (
-    <aside className="flex w-72 flex-col overflow-hidden border-l">
+    <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l">
       <div className="border-b p-4">
         <h2 className="text-lg font-semibold">Settings</h2>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-4">
-          <Accordion type="multiple" defaultValue={["template", "theme", "export"]}>
+          <Accordion type="multiple" defaultValue={["template", "layout", "theme", "export"]}>
             {/* Template Section */}
             <AccordionItem value="template">
               <AccordionTrigger>Template</AccordionTrigger>
@@ -184,6 +231,14 @@ export function RightSidebar() {
                     </Select>
                   </div>
                 </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* Layout Section */}
+            <AccordionItem value="layout">
+              <AccordionTrigger>Layout</AccordionTrigger>
+              <AccordionContent>
+                <LayoutSection />
               </AccordionContent>
             </AccordionItem>
 
@@ -308,14 +363,60 @@ export function RightSidebar() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
-                    <Input
-                      id="fontFamily"
-                      value={typography.font?.family || "IBM Plex Serif"}
-                      onChange={(e) =>
-                        setValue("metadata.typography.font.family", e.target.value)
-                      }
-                      onBlur={handleBlur}
-                    />
+                    <Popover open={fontOpen} onOpenChange={setFontOpen}>
+                      <PopoverTrigger asChild>
+                        <Input
+                          id="fontFamily"
+                          value={fontFamily}
+                          onChange={(e) => {
+                            setValue("metadata.typography.font.family", e.target.value);
+                            setFontOpen(true);
+                          }}
+                          onFocus={() => setFontOpen(true)}
+                          onBlur={handleBlur}
+                          autoComplete="off"
+                          role="combobox"
+                          aria-expanded={fontOpen}
+                          aria-controls="font-family-list"
+                        />
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        className="w-[--radix-popover-trigger-width] p-0"
+                      >
+                        <Command shouldFilter={false}>
+                          <CommandList id="font-family-list">
+                            <CommandEmpty>No fonts found.</CommandEmpty>
+                            <CommandGroup>
+                              {fontMatches.visible.map((family) => (
+                                <CommandItem
+                                  key={family}
+                                  value={family}
+                                  onSelect={() => {
+                                    setValue("metadata.typography.font.family", family);
+                                    setFontOpen(false);
+                                    handleBlur();
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4 opacity-0",
+                                      family === fontFamily && "opacity-100",
+                                    )}
+                                  />
+                                  {family}
+                                </CommandItem>
+                              ))}
+                              {fontMatches.hasMore && (
+                                <CommandItem disabled value="__more-fonts">
+                                  Keep typing to narrow results...
+                                </CommandItem>
+                              )}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   <div>
@@ -442,12 +543,12 @@ export function RightSidebar() {
                     </p>
                   </div>
 
-                  {resume.visibility === "public" && (
+                  {resume.visibility === "public" && username && (
                     <div>
                       <Label>Public URL</Label>
                       <div className="mt-1 flex items-center gap-2">
                         <code className="flex-1 truncate rounded-md bg-secondary px-2 py-1 text-xs">
-                          /{resume.userId}/{resume.slug}
+                          {publicUrl.replace(origin, "")}
                         </code>
                         <Button
                           size="icon"
@@ -463,7 +564,37 @@ export function RightSidebar() {
                       </div>
                     </div>
                   )}
+
+                  {resume.visibility === "public" && username && (
+                    <div>
+                      <Label>Raw JSON URL</Label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <code className="flex-1 truncate rounded-md bg-secondary px-2 py-1 text-xs">
+                          {rawJsonUrl.replace(origin, "")}
+                        </code>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={handleCopyRawLink}
+                        >
+                          {rawCopied ? (
+                            <Check className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* Statistics */}
+            <AccordionItem value="statistics">
+              <AccordionTrigger>Statistics</AccordionTrigger>
+              <AccordionContent>
+                <StatisticsSection />
               </AccordionContent>
             </AccordionItem>
 
@@ -505,6 +636,14 @@ export function RightSidebar() {
                     </div>
                   </Button>
                 </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* Information */}
+            <AccordionItem value="information">
+              <AccordionTrigger>Information</AccordionTrigger>
+              <AccordionContent>
+                <InformationSection />
               </AccordionContent>
             </AccordionItem>
           </Accordion>

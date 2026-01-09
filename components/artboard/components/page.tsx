@@ -7,11 +7,13 @@ type Props = {
   mode?: "preview" | "builder";
   pageNumber: number;
   children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
 };
 
 export const MM_TO_PX = 3.78;
 
-export const Page = ({ mode = "preview", pageNumber, children }: Props) => {
+export const Page = ({ mode = "preview", pageNumber, children, className, style }: Props) => {
   const { isDarkMode } = useTheme();
 
   const page = useArtboardStore((state) => state.resume.metadata.page);
@@ -20,11 +22,16 @@ export const Page = ({ mode = "preview", pageNumber, children }: Props) => {
   return (
     <div
       data-page={pageNumber}
-      className={cn("relative bg-background text-foreground", mode === "builder" && "shadow-2xl")}
+      className={cn(
+        "relative bg-background text-foreground",
+        mode === "builder" && "shadow-2xl",
+        className,
+      )}
       style={{
         fontFamily,
         width: `${pageSizeMap[page.format].width * MM_TO_PX}px`,
         minHeight: `${pageSizeMap[page.format].height * MM_TO_PX}px`,
+        ...style,
       }}
     >
       {mode === "builder" && page.options.pageNumbers && (

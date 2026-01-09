@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import type { ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { useArtboardStore } from "@/components/artboard/store/artboard";
+import { Page } from "@/components/artboard/components/page";
 import { getTemplate } from "@/components/templates";
 import { pageSizeMap } from "@/lib/utils";
 import type { Template } from "@/lib/utils";
@@ -10,17 +14,35 @@ import type { ResumeData, SectionKey } from "@/lib/schema";
 const MM_TO_PX = 3.78;
 
 export default function ArtboardPage() {
+  const searchParams = useSearchParams();
+  const isPrint = searchParams.get("print") === "1";
   const resume = useArtboardStore((state) => state.resume);
   const setResume = useArtboardStore((state) => state.setResume);
   const [isReady, setIsReady] = useState(false);
+  const [wheelPanning, setWheelPanning] = useState(true);
+  const transformRef = useRef<ReactZoomPanPinchRef>(null);
+  const hasCenteredRef = useRef(false);
 
   // Listen for postMessage from parent window
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "RESUME_DATA") {
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data?.type === "RESUME_DATA" || event.data?.type === "SET_RESUME") {
         const resumeData = event.data.payload as ResumeData;
         setResume(resumeData);
         setIsReady(true);
+      }
+
+      if (event.data?.type === "ZOOM_IN") transformRef.current?.zoomIn(0.2);
+      if (event.data?.type === "ZOOM_OUT") transformRef.current?.zoomOut(0.2);
+      if (event.data?.type === "CENTER_VIEW") transformRef.current?.centerView();
+      if (event.data?.type === "RESET_VIEW") {
+        transformRef.current?.resetTransform(0);
+        setTimeout(() => transformRef.current?.centerView(0.8, 0), 10);
+      }
+      if (event.data?.type === "TOGGLE_PAN_MODE") {
+        setWheelPanning(event.data.panMode);
       }
     };
 
@@ -29,10 +51,32 @@ export default function ArtboardPage() {
     // Notify parent that artboard is ready to receive data
     window.parent.postMessage({ type: "ARTBOARD_READY" }, "*");
 
+    const storedResume = window.localStorage.getItem("resume");
+    if (storedResume) {
+      try {
+        const resumeData = JSON.parse(storedResume) as ResumeData;
+        setResume(resumeData);
+        setIsReady(true);
+      } catch (error) {
+        console.error("Failed to parse stored resume:", error);
+      }
+    }
+
     return () => {
       window.removeEventListener("message", handleMessage);
     };
   }, [setResume]);
+
+  // Center the view once when resume data is first ready
+  useEffect(() => {
+    if (isReady && transformRef.current && !hasCenteredRef.current) {
+      hasCenteredRef.current = true;
+      // Small delay to ensure content is rendered
+      setTimeout(() => {
+        transformRef.current?.centerView(0.8, 0);
+      }, 100);
+    }
+  }, [isReady]);
 
   const templateName = (resume.metadata?.template || "rhyhorn") as Template;
   const TemplateComponent = getTemplate(templateName);
@@ -89,8 +133,6 @@ export default function ArtboardPage() {
           font-family: "${fontFamily}", "IBM Plex Sans", sans-serif;
           font-size: ${fontSize}px;
           line-height: ${lineHeight};
-          width: ${pageSize.width * MM_TO_PX}px;
-          min-height: ${pageSize.height * MM_TO_PX}px;
           overflow: hidden;
           box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         }
@@ -273,6 +315,7 @@ export default function ArtboardPage() {
         .wysiwyg {
           font-size: inherit;
           line-height: inherit;
+          white-space: pre-wrap;
         }
 
         .wysiwyg p {
@@ -288,9 +331,84 @@ export default function ArtboardPage() {
           margin-bottom: 0.5em;
         }
 
+        .wysiwyg ul {
+          list-style-type: disc;
+        }
+
+        .wysiwyg ol {
+          list-style-type: decimal;
+        }
+
+        .wysiwyg li {
+          margin-bottom: 0.25em;
+        }
+
+        .wysiwyg li:last-child {
+          margin-bottom: 0;
+        }
+
         .wysiwyg a {
           color: ${primaryColor};
           text-decoration: underline;
+        }
+
+        .wysiwyg strong, .wysiwyg b {
+          font-weight: 700;
+        }
+
+        .wysiwyg em, .wysiwyg i {
+          font-style: italic;
+        }
+
+        .wysiwyg u {
+          text-decoration: underline;
+        }
+
+        .wysiwyg s {
+          text-decoration: line-through;
+        }
+
+        .wysiwyg mark {
+          background-color: rgba(255, 255, 0, 0.3);
+          padding: 0 0.1em;
+        }
+
+        .wysiwyg blockquote {
+          border-left: 3px solid ${primaryColor};
+          padding-left: 1em;
+          margin: 0.5em 0;
+          font-style: italic;
+        }
+
+        .wysiwyg code {
+          background-color: rgba(0, 0, 0, 0.05);
+          padding: 0.1em 0.3em;
+          border-radius: 3px;
+          font-family: monospace;
+          font-size: 0.9em;
+        }
+
+        .wysiwyg pre {
+          background-color: rgba(0, 0, 0, 0.05);
+          padding: 0.5em;
+          border-radius: 4px;
+          overflow-x: auto;
+          margin: 0.5em 0;
+        }
+
+        .wysiwyg pre code {
+          background: none;
+          padding: 0;
+        }
+
+        .wysiwyg h1, .wysiwyg h2, .wysiwyg h3, .wysiwyg h4, .wysiwyg h5, .wysiwyg h6 {
+          font-weight: 700;
+          margin-top: 0.5em;
+          margin-bottom: 0.25em;
+        }
+
+        .wysiwyg h1:first-child, .wysiwyg h2:first-child, .wysiwyg h3:first-child {
+          margin-top: 0;
         }
 
         /* Picture styles */
@@ -306,22 +424,42 @@ export default function ArtboardPage() {
         }
       `}</style>
 
-      <div className="artboard-container">
-        {!isReady ? (
-          <div style={{ color: "white", padding: "2rem" }}>
-            Waiting for resume data...
-          </div>
-        ) : (
-          layout.map((columns, pageIndex) => (
-            <div key={pageIndex} className="page">
-              <TemplateComponent
-                columns={columns as [SectionKey[], SectionKey[]]}
-                isFirstPage={pageIndex === 0}
-              />
+      <TransformWrapper
+        ref={transformRef}
+        centerOnInit
+        maxScale={2}
+        minScale={0.4}
+        initialScale={0.8}
+        limitToBounds={false}
+        wheel={{ wheelDisabled: wheelPanning }}
+        panning={{ wheelPanning }}
+      >
+        <TransformComponent wrapperClass="!w-screen !h-screen" contentClass="artboard-container">
+          {!isReady ? (
+            <div style={{ color: "white", padding: "2rem" }}>
+              Waiting for resume data...
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            layout.map((columns, pageIndex) => (
+              <Page
+                key={pageIndex}
+                mode={isPrint ? "preview" : "builder"}
+                pageNumber={pageIndex + 1}
+                className="page"
+                style={{
+                  width: `${pageSize.width * MM_TO_PX}px`,
+                  minHeight: `${pageSize.height * MM_TO_PX}px`,
+                }}
+              >
+                <TemplateComponent
+                  columns={columns as [SectionKey[], SectionKey[]]}
+                  isFirstPage={pageIndex === 0}
+                />
+              </Page>
+            ))
+          )}
+        </TransformComponent>
+      </TransformWrapper>
     </>
   );
 }

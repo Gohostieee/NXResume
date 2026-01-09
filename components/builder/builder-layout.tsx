@@ -1,85 +1,103 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft, FloppyDisk, Check, CircleNotch } from "@phosphor-icons/react";
-import { Button } from "@/components/ui/button";
+import { useBreakpoint } from "@/lib/hooks";
 import { LeftSidebar } from "./sidebars/left/left-sidebar";
 import { RightSidebar } from "./sidebars/right/right-sidebar";
 import { PreviewPanel } from "./preview-panel";
 import { AutoSave } from "./auto-save";
-import { useResumeStore } from "@/stores/resume";
-import { useAutoSaveStore } from "@/stores/auto-save";
+import { BuilderHeader } from "./builder-header";
+import { BuilderToolbar } from "./builder-toolbar";
+import { Panel, PanelGroup, PanelResizeHandle } from "@/components/ui/resizable-panel";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { VisuallyHidden } from "@/components/ui/visually-hidden";
+import { useBuilderStore } from "@/stores/builder";
 
 type BuilderLayoutProps = {
   resume: any;
 };
 
-export function BuilderLayout({ resume }: BuilderLayoutProps) {
-  const resumeData = useResumeStore((state) => state.resume);
-  const isSaving = useAutoSaveStore((state) => state.isSaving);
-  const triggerSave = useAutoSaveStore((state) => state.triggerSave);
+const CenterSlot = () => (
+  <div className="relative flex h-full flex-col">
+    <AutoSave />
+    <BuilderHeader />
+    <PreviewPanel />
+    <BuilderToolbar />
+  </div>
+);
 
-  const handleSave = async () => {
-    await triggerSave();
-  };
+export function BuilderLayout(_props: BuilderLayoutProps) {
+  const { isDesktop } = useBreakpoint();
+  const sheet = useBuilderStore((state) => state.sheet);
+  const leftSetSize = useBuilderStore((state) => state.panel.left.setSize);
+  const rightSetSize = useBuilderStore((state) => state.panel.right.setSize);
+  const leftHandle = useBuilderStore((state) => state.panel.left.handle);
+  const rightHandle = useBuilderStore((state) => state.panel.right.handle);
+
+  if (isDesktop) {
+    return (
+      <div className="relative h-screen overflow-hidden">
+        <PanelGroup direction="horizontal" className="h-full">
+          <Panel
+            minSize={25}
+            maxSize={45}
+            defaultSize={30}
+            className={!leftHandle.isDragging ? "transition-[flex]" : ""}
+            onResize={leftSetSize}
+          >
+            <LeftSidebar />
+          </Panel>
+          <PanelResizeHandle
+            isDragging={leftHandle.isDragging}
+            onDragging={leftHandle.setDragging}
+          />
+          <Panel>
+            <CenterSlot />
+          </Panel>
+          <PanelResizeHandle
+            isDragging={rightHandle.isDragging}
+            onDragging={rightHandle.setDragging}
+          />
+          <Panel
+            minSize={25}
+            maxSize={45}
+            defaultSize={30}
+            className={!rightHandle.isDragging ? "transition-[flex]" : ""}
+            onResize={rightSetSize}
+          >
+            <RightSidebar />
+          </Panel>
+        </PanelGroup>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-screen flex-col">
-      {/* Auto-save component */}
-      <AutoSave />
+    <div className="relative h-screen overflow-hidden">
+      <Sheet open={sheet.left.open} onOpenChange={sheet.left.setOpen}>
+        <VisuallyHidden>
+          <SheetHeader>
+            <SheetTitle>Resume Editor</SheetTitle>
+            <SheetDescription>Resume content</SheetDescription>
+          </SheetHeader>
+        </VisuallyHidden>
+        <SheetContent side="left" showClose={false} className="top-14 p-0 sm:max-w-xl">
+          <LeftSidebar />
+        </SheetContent>
+      </Sheet>
 
-      {/* Header */}
-      <header className="flex h-14 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard/resumes">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="font-semibold">{resumeData?.title || resume.title}</h1>
-            <p className="flex items-center gap-1.5 text-xs text-foreground/60">
-              {isSaving ? (
-                <>
-                  <CircleNotch className="h-3 w-3 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Check className="h-3 w-3 text-green-500" />
-                  Auto-save enabled
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {resume.locked && (
-            <span className="text-sm text-warning">Locked</span>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            <FloppyDisk className="mr-2 h-4 w-4" />
-            {isSaving ? "Saving..." : "Save"}
-          </Button>
-        </div>
-      </header>
+      <CenterSlot />
 
-      {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Resume Data */}
-        <LeftSidebar />
-
-        {/* Center - Preview */}
-        <PreviewPanel />
-
-        {/* Right Sidebar - Settings */}
-        <RightSidebar />
-      </div>
+      <Sheet open={sheet.right.open} onOpenChange={sheet.right.setOpen}>
+        <VisuallyHidden>
+          <SheetHeader>
+            <SheetTitle>Settings</SheetTitle>
+            <SheetDescription>Resume settings</SheetDescription>
+          </SheetHeader>
+        </VisuallyHidden>
+        <SheetContent side="right" showClose={false} className="top-14 p-0 sm:max-w-xl">
+          <RightSidebar />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

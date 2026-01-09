@@ -2,15 +2,14 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useResumeStore } from "@/stores/resume";
-import { pageSizeMap } from "@/lib/utils";
-
-const MM_TO_PX = 3.78;
+import { useBuilderStore } from "@/stores/builder";
 
 export function PreviewPanel() {
   const resume = useResumeStore((state) => state.resume);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const setFrameRef = useBuilderStore((state) => state.frame.setRef);
   const [isArtboardReady, setIsArtboardReady] = useState(false);
-  const [scale, setScale] = useState(0.6);
+  const resumeId = resume?.id || resume?._id;
 
   // Send resume data to iframe
   const sendResumeData = useCallback(() => {
@@ -28,6 +27,7 @@ export function PreviewPanel() {
   // Listen for artboard ready message
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
       if (event.data?.type === "ARTBOARD_READY") {
         setIsArtboardReady(true);
         // Send initial data when artboard is ready
@@ -51,6 +51,12 @@ export function PreviewPanel() {
     // The artboard will send ARTBOARD_READY when it's initialized
   }, []);
 
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    setFrameRef(iframeRef.current);
+    return () => setFrameRef(null);
+  }, [setFrameRef, resumeId]);
+
   if (!resume?.data) {
     return (
       <main className="flex flex-1 items-center justify-center bg-secondary/30">
@@ -59,67 +65,17 @@ export function PreviewPanel() {
     );
   }
 
-  const pageFormat = resume.data.metadata?.page?.format || "a4";
-  const pageSize = pageSizeMap[pageFormat];
-  const iframeWidth = pageSize.width * MM_TO_PX;
-  const iframeHeight = pageSize.height * MM_TO_PX;
-
-  // Calculate scale to fit the container while maintaining aspect ratio
-  // We use a wrapper to apply transform scaling for better performance
-
   return (
     <main className="relative flex flex-1 flex-col overflow-hidden bg-secondary/30">
-      {/* Zoom controls */}
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg border bg-background p-2 shadow-sm">
-        <button
-          onClick={() => setScale((s) => Math.max(0.25, s - 0.1))}
-          className="rounded px-2 py-1 hover:bg-secondary"
-        >
-          -
-        </button>
-        <span className="min-w-[4rem] text-center text-sm">
-          {Math.round(scale * 100)}%
-        </span>
-        <button
-          onClick={() => setScale((s) => Math.min(1.5, s + 0.1))}
-          className="rounded px-2 py-1 hover:bg-secondary"
-        >
-          +
-        </button>
-        <button
-          onClick={() => setScale(0.6)}
-          className="ml-2 rounded px-2 py-1 text-sm hover:bg-secondary"
-        >
-          Reset
-        </button>
-      </div>
-
-      {/* Iframe container with scrolling */}
-      <div className="flex flex-1 justify-center overflow-auto p-8">
-        <div
-          className="origin-top"
-          style={{
-            width: iframeWidth * scale,
-            height: "auto",
-            minHeight: iframeHeight * scale,
-          }}
-        >
-          <iframe
-            ref={iframeRef}
-            src={`/artboard/${resume.id}`}
-            onLoad={handleIframeLoad}
-            className="border-0"
-            style={{
-              width: iframeWidth,
-              height: iframeHeight * 2, // Allow for multiple pages
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
-              background: "transparent",
-              display: "block",
-            }}
-            title="Resume Preview"
-          />
-        </div>
+      <div className="flex flex-1 overflow-hidden">
+        <iframe
+          ref={iframeRef}
+          src={`/artboard/${resumeId}`}
+          onLoad={handleIframeLoad}
+          className="h-full w-full border-0"
+          style={{ background: "transparent" }}
+          title="Resume Preview"
+        />
       </div>
     </main>
   );

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { FileText, GearSix, House } from "@phosphor-icons/react";
+import { FileText, GearSix, House, UserCircle } from "@phosphor-icons/react";
 import { cn } from "@reactive-resume/utils";
 
 const navigation = [
   { name: "Resumes", href: "/dashboard/resumes", icon: FileText },
+  { name: "Profile", href: "/dashboard/profile", icon: UserCircle },
   { name: "Settings", href: "/dashboard/settings", icon: GearSix },
 ];
 
@@ -25,7 +26,7 @@ export default function DashboardLayout({
         <div className="flex h-16 items-center gap-2 border-b px-6">
           <Link href="/" className="flex items-center gap-2 font-semibold">
             <House className="h-5 w-5" />
-            Soul Resume
+            NXResume
           </Link>
         </div>
 

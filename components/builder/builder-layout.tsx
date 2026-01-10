@@ -6,7 +6,7 @@ import { RightSidebar } from "./sidebars/right/right-sidebar";
 import { PreviewPanel } from "./preview-panel";
 import { AutoSave } from "./auto-save";
 import { BuilderHeader } from "./builder-header";
-import { BuilderToolbar } from "./builder-toolbar";
+import { BuilderBottomDock } from "./bottom-dock";
 import { Panel, PanelGroup, PanelResizeHandle } from "@/components/ui/resizable-panel";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
@@ -21,7 +21,7 @@ const CenterSlot = () => (
     <AutoSave />
     <BuilderHeader />
     <PreviewPanel />
-    <BuilderToolbar />
+    <BuilderBottomDock />
   </div>
 );
 

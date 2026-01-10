@@ -6,6 +6,7 @@ import { Chikorita } from "./chikorita";
 import { Ditto } from "./ditto";
 import { Gengar } from "./gengar";
 import { Glalie } from "./glalie";
+import { Harvard } from "./harvard";
 import { Kakuna } from "./kakuna";
 import { Leafish } from "./leafish";
 import { Nosepass } from "./nosepass";
@@ -32,6 +33,9 @@ export const getTemplate = (template: Template) => {
     }
     case "glalie": {
       return Glalie;
+    }
+    case "harvard": {
+      return Harvard;
     }
     case "kakuna": {
       return Kakuna;

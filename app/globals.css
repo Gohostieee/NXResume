@@ -92,6 +92,10 @@
     --secondary-accent: var(--zinc-100);
     --secondary-foreground: var(--zinc-950);
 
+    /* Muted */
+    --muted: var(--zinc-200);
+    --muted-foreground: var(--zinc-600);
+
     /* Error */
     --error: var(--rose-500);
     --error-accent: var(--rose-400);
@@ -128,6 +132,10 @@
     --secondary-accent: var(--zinc-900);
     --secondary-foreground: var(--zinc-50);
 
+    /* Muted */
+    --muted: var(--zinc-800);
+    --muted-foreground: var(--zinc-300);
+
     /* Error */
     --error: var(--rose-700);
     --error-accent: var(--rose-800);
@@ -157,5 +165,50 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(10px, -18px, 0);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-12px, 14px, 0);
+  }
+}
+
+@keyframes rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 16s ease-in-out infinite;
+  }
+
+  .animate-drift {
+    animation: drift 18s ease-in-out infinite;
+  }
+
+  .animate-rise {
+    animation: rise 0.8s ease-out both;
   }
 }

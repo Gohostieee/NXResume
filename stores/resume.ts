@@ -29,6 +29,7 @@ type ResumeStore = {
 
   // Actions
   setResume: (resume: Resume) => void;
+  setResumeData: (data: ResumeData) => void;
   setValue: (path: string, value: unknown) => void;
 
   // Custom Section Actions
@@ -52,6 +53,11 @@ export const useResumeStore = create<ResumeStore>()(
           id: resume.id || resume._id || "",
         };
         set({ resume: normalizedResume });
+      },
+      setResumeData: (data) => {
+        set((state) => {
+          state.resume.data = data;
+        });
       },
       setValue: (path, value) => {
         set((state) => {

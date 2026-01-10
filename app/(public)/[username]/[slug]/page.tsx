@@ -90,7 +90,7 @@ export default function PublicResumePage() {
         <div className="container text-center text-sm text-foreground/60">
           Built with{" "}
           <Link href="/" className="text-primary hover:underline">
-            Soul Resume
+            NXResume
           </Link>
         </div>
       </footer>

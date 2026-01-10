@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { HelmetProvider } from "react-helmet-async";
-
-import { helmetContext } from "../constants/helmet";
 import { useArtboardStore } from "../store/artboard";
 
 type Props = {
@@ -35,9 +32,5 @@ export const ArtboardProvider = ({ children }: Props) => {
 
   if (!resume) return null;
 
-  return (
-    <HelmetProvider context={helmetContext}>
-      {children}
-    </HelmetProvider>
-  );
+  return <>{children}</>;
 };

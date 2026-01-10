@@ -8,7 +8,7 @@ import "@fontsource/ibm-plex-sans/700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Soul Resume - Free Resume Builder",
+  title: "NXResume - Free Resume Builder",
   description:
     "A free and open-source resume builder that simplifies the process of creating, updating, and sharing your resume.",
 };

@@ -6,7 +6,7 @@ import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { BuilderLayout } from "@/components/builder/builder-layout";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useResumeStore } from "@/stores/resume";
 
 export default function BuilderPage() {
@@ -21,6 +21,7 @@ export default function BuilderPage() {
   );
   const setResume = useResumeStore((state) => state.setResume);
   const hasResumeInStore = useResumeStore((state) => Boolean(state.resume?.data));
+  const lastResumeIdRef = useRef<string | null>(null);
 
   // Give auth a moment to load before showing "not found"
   useEffect(() => {
@@ -35,7 +36,11 @@ export default function BuilderPage() {
   useEffect(() => {
     if (resume) {
       setResume(resume as any);
-      useResumeStore.temporal.getState().clear();
+      const resumeId = (resume as { id?: string; _id?: string }).id ?? (resume as { _id?: string })._id ?? null;
+      if (resumeId && lastResumeIdRef.current !== resumeId) {
+        useResumeStore.temporal.getState().clear();
+        lastResumeIdRef.current = resumeId;
+      }
     }
   }, [resume, setResume]);
 

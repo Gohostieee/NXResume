@@ -10,73 +10,32 @@ import { getTemplate } from "@/components/templates";
 import { pageSizeMap } from "@/lib/utils";
 import type { Template } from "@/lib/utils";
 import type { ResumeData, SectionKey } from "@/lib/schema";
+import {
+  FontProvider,
+  useFontContext,
+} from "@/components/artboard/providers/font-provider";
 
 const MM_TO_PX = 3.78;
 
-export default function ArtboardPage() {
+function ArtboardContent() {
   const searchParams = useSearchParams();
   const isPrint = searchParams.get("print") === "1";
   const resume = useArtboardStore((state) => state.resume);
-  const setResume = useArtboardStore((state) => state.setResume);
-  const [isReady, setIsReady] = useState(false);
   const [wheelPanning, setWheelPanning] = useState(true);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
   const hasCenteredRef = useRef(false);
-
-  // Listen for postMessage from parent window
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data?.type === "RESUME_DATA" || event.data?.type === "SET_RESUME") {
-        const resumeData = event.data.payload as ResumeData;
-        setResume(resumeData);
-        setIsReady(true);
-      }
-
-      if (event.data?.type === "ZOOM_IN") transformRef.current?.zoomIn(0.2);
-      if (event.data?.type === "ZOOM_OUT") transformRef.current?.zoomOut(0.2);
-      if (event.data?.type === "CENTER_VIEW") transformRef.current?.centerView();
-      if (event.data?.type === "RESET_VIEW") {
-        transformRef.current?.resetTransform(0);
-        setTimeout(() => transformRef.current?.centerView(0.8, 0), 10);
-      }
-      if (event.data?.type === "TOGGLE_PAN_MODE") {
-        setWheelPanning(event.data.panMode);
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-
-    // Notify parent that artboard is ready to receive data
-    window.parent.postMessage({ type: "ARTBOARD_READY" }, "*");
-
-    const storedResume = window.localStorage.getItem("resume");
-    if (storedResume) {
-      try {
-        const resumeData = JSON.parse(storedResume) as ResumeData;
-        setResume(resumeData);
-        setIsReady(true);
-      } catch (error) {
-        console.error("Failed to parse stored resume:", error);
-      }
-    }
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [setResume]);
+  const { fontFamily, isLoaded, fontFamilyCSS } = useFontContext();
 
   // Center the view once when resume data is first ready
   useEffect(() => {
-    if (isReady && transformRef.current && !hasCenteredRef.current) {
+    if (transformRef.current && !hasCenteredRef.current) {
       hasCenteredRef.current = true;
       // Small delay to ensure content is rendered
       setTimeout(() => {
         transformRef.current?.centerView(0.8, 0);
       }, 100);
     }
-  }, [isReady]);
+  }, []);
 
   const templateName = (resume.metadata?.template || "rhyhorn") as Template;
   const TemplateComponent = getTemplate(templateName);
@@ -90,7 +49,6 @@ export default function ArtboardPage() {
   const textColor = resume.metadata?.theme?.text || "#000000";
 
   // Typography
-  const fontFamily = resume.metadata?.typography?.font?.family || "IBM Plex Sans";
   const fontSize = resume.metadata?.typography?.font?.size || 14;
   const lineHeight = resume.metadata?.typography?.lineHeight || 1.5;
   const pageMargin = resume.metadata?.page?.margin || 18;
@@ -98,12 +56,6 @@ export default function ArtboardPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap');
-
         * {
           margin: 0;
           padding: 0;
@@ -130,7 +82,7 @@ export default function ArtboardPage() {
         .page {
           background: ${backgroundColor};
           color: ${textColor};
-          font-family: "${fontFamily}", "IBM Plex Sans", sans-serif;
+          font-family: ${fontFamilyCSS};
           font-size: ${fontSize}px;
           line-height: ${lineHeight};
           overflow: hidden;
@@ -424,6 +376,13 @@ export default function ArtboardPage() {
         }
       `}</style>
 
+      {/* Font loading indicator (hidden, used by Puppeteer for PDF generation) */}
+      <div
+        data-font-loaded={isLoaded}
+        data-font-family={fontFamily}
+        style={{ display: "none" }}
+      />
+
       <TransformWrapper
         ref={transformRef}
         centerOnInit
@@ -434,32 +393,101 @@ export default function ArtboardPage() {
         wheel={{ wheelDisabled: wheelPanning }}
         panning={{ wheelPanning }}
       >
-        <TransformComponent wrapperClass="!w-screen !h-screen" contentClass="artboard-container">
-          {!isReady ? (
-            <div style={{ color: "white", padding: "2rem" }}>
-              Waiting for resume data...
-            </div>
-          ) : (
-            layout.map((columns, pageIndex) => (
-              <Page
-                key={pageIndex}
-                mode={isPrint ? "preview" : "builder"}
-                pageNumber={pageIndex + 1}
-                className="page"
-                style={{
-                  width: `${pageSize.width * MM_TO_PX}px`,
-                  minHeight: `${pageSize.height * MM_TO_PX}px`,
-                }}
-              >
-                <TemplateComponent
-                  columns={columns as [SectionKey[], SectionKey[]]}
-                  isFirstPage={pageIndex === 0}
-                />
-              </Page>
-            ))
-          )}
+        <TransformComponent
+          wrapperClass="!w-screen !h-screen"
+          contentClass="artboard-container"
+        >
+          {layout.map((columns, pageIndex) => (
+            <Page
+              key={pageIndex}
+              mode={isPrint ? "preview" : "builder"}
+              pageNumber={pageIndex + 1}
+              className="page"
+              style={{
+                width: `${pageSize.width * MM_TO_PX}px`,
+                minHeight: `${pageSize.height * MM_TO_PX}px`,
+              }}
+            >
+              <TemplateComponent
+                columns={columns as [SectionKey[], SectionKey[]]}
+                isFirstPage={pageIndex === 0}
+              />
+            </Page>
+          ))}
         </TransformComponent>
       </TransformWrapper>
     </>
+  );
+}
+
+export default function ArtboardPage() {
+  const resume = useArtboardStore((state) => state.resume);
+  const setResume = useArtboardStore((state) => state.setResume);
+  const [isReady, setIsReady] = useState(false);
+  const [wheelPanning, setWheelPanning] = useState(true);
+  const transformRef = useRef<ReactZoomPanPinchRef>(null);
+
+  const fontFamily =
+    resume.metadata?.typography?.font?.family || "IBM Plex Sans";
+
+  // Listen for postMessage from parent window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      if (
+        event.data?.type === "RESUME_DATA" ||
+        event.data?.type === "SET_RESUME"
+      ) {
+        const resumeData = event.data.payload as ResumeData;
+        setResume(resumeData);
+        setIsReady(true);
+      }
+
+      if (event.data?.type === "ZOOM_IN") transformRef.current?.zoomIn(0.2);
+      if (event.data?.type === "ZOOM_OUT") transformRef.current?.zoomOut(0.2);
+      if (event.data?.type === "CENTER_VIEW") transformRef.current?.centerView();
+      if (event.data?.type === "RESET_VIEW") {
+        transformRef.current?.resetTransform(0);
+        setTimeout(() => transformRef.current?.centerView(0.8, 0), 10);
+      }
+      if (event.data?.type === "TOGGLE_PAN_MODE") {
+        setWheelPanning(event.data.panMode);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+
+    // Notify parent that artboard is ready to receive data
+    window.parent.postMessage({ type: "ARTBOARD_READY" }, "*");
+
+    const storedResume = window.localStorage.getItem("resume");
+    if (storedResume) {
+      try {
+        const resumeData = JSON.parse(storedResume) as ResumeData;
+        setResume(resumeData);
+        setIsReady(true);
+      } catch (error) {
+        console.error("Failed to parse stored resume:", error);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [setResume]);
+
+  if (!isReady) {
+    return (
+      <div style={{ color: "white", padding: "2rem" }}>
+        Waiting for resume data...
+      </div>
+    );
+  }
+
+  return (
+    <FontProvider fontFamily={fontFamily}>
+      <ArtboardContent />
+    </FontProvider>
   );
 }

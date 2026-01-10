@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -12,7 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
-import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
@@ -33,6 +40,7 @@ const TEMPLATES = [
   { value: "ditto", label: "Ditto" },
   { value: "gengar", label: "Gengar" },
   { value: "glalie", label: "Glalie" },
+  { value: "harvard", label: "Harvard" },
   { value: "kakuna", label: "Kakuna" },
   { value: "leafish", label: "Leafish" },
   { value: "nosepass", label: "Nosepass" },
@@ -47,6 +55,29 @@ const PAGE_FORMATS = [
 ];
 
 const MAX_FONT_RESULTS = 200;
+const GOOGLE_FONT_WEIGHTS = "400;500;600;700";
+const loadedFontFamilies = new Set<string>();
+
+const getFontStack = (family: string) => `"${family}", "IBM Plex Sans", sans-serif`;
+
+const getGoogleFontHref = (family: string) =>
+  `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@${GOOGLE_FONT_WEIGHTS}&display=swap`;
+
+const isLocalFontFamily = (family: string) =>
+  localFonts.some((font) => font.toLowerCase() === family.toLowerCase());
+
+const ensureFontLoaded = (family: string) => {
+  if (!family || isLocalFontFamily(family)) return;
+  if (loadedFontFamilies.has(family)) return;
+  if (typeof document === "undefined") return;
+
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = getGoogleFontHref(family);
+  link.dataset.fontFamily = family;
+  document.head.appendChild(link);
+  loadedFontFamilies.add(family);
+};
 
 // Color picker input component with onBlur save
 function ColorPickerInput({
@@ -135,12 +166,13 @@ export function RightSidebar() {
 
   const fontFamily = typography.font?.family || "IBM Plex Serif";
   const [fontOpen, setFontOpen] = useState(false);
+  const [fontQuery, setFontQuery] = useState("");
   const fontFamilies = useMemo(() => {
     const families = new Set<string>([...localFonts, ...fonts.map((font) => font.family)]);
     return Array.from(families).sort((a, b) => a.localeCompare(b));
   }, []);
   const fontMatches = useMemo(() => {
-    const query = fontFamily.trim().toLowerCase();
+    const query = fontQuery.trim().toLowerCase();
     const matches = query
       ? fontFamilies.filter((family) => family.toLowerCase().includes(query))
       : fontFamilies;
@@ -149,7 +181,20 @@ export function RightSidebar() {
       visible: matches.slice(0, MAX_FONT_RESULTS),
       hasMore: matches.length > MAX_FONT_RESULTS,
     };
-  }, [fontFamily, fontFamilies]);
+  }, [fontQuery, fontFamilies]);
+
+  const fontStack = useMemo(() => getFontStack(fontFamily), [fontFamily]);
+
+  useEffect(() => {
+    ensureFontLoaded(fontFamily);
+  }, [fontFamily]);
+
+  useEffect(() => {
+    if (!fontOpen) return;
+    fontMatches.visible.forEach((family) => {
+      ensureFontLoaded(family);
+    });
+  }, [fontOpen, fontMatches.visible]);
 
   const handleJsonExport = () => {
     const filename = `resume-${resumeId || "export"}.json`;
@@ -363,21 +408,27 @@ export function RightSidebar() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="fontFamily">Font Family</Label>
-                    <Popover open={fontOpen} onOpenChange={setFontOpen}>
+                    <Popover
+                      open={fontOpen}
+                      onOpenChange={(open) => {
+                        setFontOpen(open);
+                        if (open) {
+                          setFontQuery("");
+                        }
+                      }}
+                    >
                       <PopoverTrigger asChild>
                         <Input
                           id="fontFamily"
                           value={fontFamily}
-                          onChange={(e) => {
-                            setValue("metadata.typography.font.family", e.target.value);
-                            setFontOpen(true);
-                          }}
+                          readOnly
                           onFocus={() => setFontOpen(true)}
                           onBlur={handleBlur}
                           autoComplete="off"
                           role="combobox"
                           aria-expanded={fontOpen}
                           aria-controls="font-family-list"
+                          style={{ fontFamily: fontStack }}
                         />
                       </PopoverTrigger>
                       <PopoverContent
@@ -385,8 +436,16 @@ export function RightSidebar() {
                         className="w-[--radix-popover-trigger-width] p-0"
                       >
                         <Command shouldFilter={false}>
+                          <CommandInput
+                            value={fontQuery}
+                            onValueChange={setFontQuery}
+                            placeholder="Search fonts..."
+                            autoFocus
+                          />
                           <CommandList id="font-family-list">
-                            <CommandEmpty>No fonts found.</CommandEmpty>
+                            {fontMatches.visible.length === 0 && (
+                              <CommandEmpty>No fonts found.</CommandEmpty>
+                            )}
                             <CommandGroup>
                               {fontMatches.visible.map((family) => (
                                 <CommandItem
@@ -397,6 +456,7 @@ export function RightSidebar() {
                                     setFontOpen(false);
                                     handleBlur();
                                   }}
+                                  style={{ fontFamily: getFontStack(family) }}
                                 >
                                   <Check
                                     className={cn(

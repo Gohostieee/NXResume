@@ -30,7 +30,7 @@ export const metadataSchema = z.object({
   }),
   typography: z.object({
     font: z.object({
-      family: z.string().default("IBM Plex Serif"),
+      family: z.string().default("IBM Plex Sans"),
       subset: z.string().default("latin"),
       variants: z.array(z.string()).default(["regular"]),
       size: z.number().default(14),
@@ -68,7 +68,7 @@ export const defaultMetadata: Metadata = {
   },
   typography: {
     font: {
-      family: "IBM Plex Serif",
+      family: "IBM Plex Sans",
       subset: "latin",
       variants: ["regular", "italic", "600"],
       size: 14,

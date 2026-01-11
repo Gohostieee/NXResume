@@ -35,6 +35,14 @@ export default function HomePage() {
             <a className="transition hover:text-foreground" href="#open-source">
               OSS bits
             </a>
+            <a
+              className="transition hover:text-foreground"
+              href="https://github.com/Gohostieee/NXResume"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
           </nav>
           <div className="hidden items-center gap-3 md:flex">
             {!isSignedIn ? (
@@ -108,6 +116,14 @@ export default function HomePage() {
                 className="text-sm font-semibold text-muted-foreground transition hover:text-foreground"
               >
                 Original RX Resume
+              </a>
+              <a
+                href="https://github.com/Gohostieee/NXResume"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold text-muted-foreground transition hover:text-foreground"
+              >
+                GitHub
               </a>
             </div>
             <div className="flex flex-wrap gap-6 text-sm text-muted-foreground">
@@ -266,14 +282,14 @@ export default function HomePage() {
           <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Why this version
+              Why we moved 
               </p>
               <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                RX Resume is great. We just prefer Next.js.
+              We liked RX Resume, we just wanted a simpler stack. 
               </h2>
               <p className="text-base text-muted-foreground">
-                Built on the same foundation, adapted to our preferred stack.
-                Next.js fits our workflow and makes deployment straightforward.
+              Same spirit, less overhead. The Next.js version is easier to                                                             
+            spin up, easier to host, and easier to contribute to.  
               </p>
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <a
@@ -285,7 +301,7 @@ export default function HomePage() {
                   Check out RX Resume
                 </a>
                 <span>/</span>
-                <span>Both are great options</span>
+                <span>Both are great options.</span>
               </div>
             </div>
             <div className="space-y-6">
@@ -338,25 +354,27 @@ export default function HomePage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-4">
+                <a
+                  href="https://github.com/Gohostieee/NXResume"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                >
+                  View on GitHub
+                </a>
                 <Link
                   href={primaryHref}
-                  className="rounded-md bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                  className="rounded-md border px-6 py-3 text-sm font-semibold transition hover:bg-muted"
                 >
                   {primaryLabel}
                 </Link>
-                <a
-                  href="#features"
-                  className="rounded-md border px-6 py-3 text-sm font-semibold transition hover:bg-muted"
-                >
-                  Quick feature list
-                </a>
               </div>
             </div>
           </div>
         </section>
 
         <footer className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 border-t px-6 py-10 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>Open-source resume builder, no SaaS energy.</p>
+          <p>Open-source resume builder.</p>
           <div className="flex items-center gap-4">
             <p>RX Resume inspired, Next.js rebuilt.</p>
             <span>•</span>

@@ -21,7 +21,7 @@ export default function HomePage() {
                 NXResume
               </p>
               <p className="text-xs text-muted-foreground">
-                RX Resume, but cleaned up and on Next.js
+                RX Resume, adapted for Next.js
               </p>
             </div>
           </div>
@@ -74,9 +74,9 @@ export default function HomePage() {
                 NXResume is a resume builder you can run on your own box.
               </h1>
               <p className="max-w-xl text-lg text-muted-foreground sm:text-xl">
-                We took RX Resume and moved it to Next.js. Fewer moving parts,
-                easier to host, and nicer to hack on. Same idea: make a clean
-                resume, export it, and share it.
+                Built on RX Resume's foundation, adapted for Next.js. Same core idea:
+                create clean resumes, export them, and share them. Just using the
+                stack we prefer to work with.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-4">
@@ -266,14 +266,14 @@ export default function HomePage() {
           <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                Why we moved
+                Why this version
               </p>
               <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                We liked RX Resume, we just wanted a simpler stack.
+                RX Resume is great. We just prefer Next.js.
               </h2>
               <p className="text-base text-muted-foreground">
-                Same spirit, less overhead. The Next.js version is easier to
-                spin up, easier to host, and easier to contribute to.
+                Built on the same foundation, adapted to our preferred stack.
+                Next.js fits our workflow and makes deployment straightforward.
               </p>
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                 <a
@@ -282,37 +282,37 @@ export default function HomePage() {
                   rel="noreferrer"
                   className="font-semibold underline underline-offset-4 hover:text-foreground"
                 >
-                  Explore RX Resume
+                  Check out RX Resume
                 </a>
                 <span>/</span>
-                <span>Still OSS, just easier to run.</span>
+                <span>Both are great options</span>
               </div>
             </div>
             <div className="space-y-6">
               <div className="rounded-md border bg-card p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-                  Before (old stack)
+                  Original
                 </p>
                 <h3 className="mt-4 text-xl font-semibold">
-                  More parts, more setup.
+                  Full-featured platform
                 </h3>
                 <ul className="mt-4 list-disc space-y-3 pl-5 text-sm text-muted-foreground">
-                  <li>Extra services to wire up.</li>
-                  <li>Heavier local setup for contributors.</li>
-                  <li>More friction for small changes.</li>
+                  <li>Comprehensive feature set</li>
+                  <li>Robust architecture</li>
+                  <li>Active community</li>
                 </ul>
               </div>
               <div className="rounded-md border bg-primary p-6 text-primary-foreground">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] opacity-70">
-                  After (this one)
+                  Our version
                 </p>
                 <h3 className="mt-4 text-xl font-semibold">
-                  One Next.js app, way less mess.
+                  Next.js focused
                 </h3>
                 <ul className="mt-4 list-disc space-y-3 pl-5 text-sm opacity-90">
-                  <li>Faster setup and easier hosting.</li>
-                  <li>Cleaner structure for templates.</li>
-                  <li>Less friction for contributors.</li>
+                  <li>Familiar Next.js patterns</li>
+                  <li>Simplified deployment</li>
+                  <li>Easy to customize</li>
                 </ul>
               </div>
             </div>

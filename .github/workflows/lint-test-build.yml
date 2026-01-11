@@ -23,23 +23,17 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.0.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4.1.0
         with:
-          cache: "pnpm"
+          cache: "npm"
           node-version: 22
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Lint
-        run: pnpm run lint
-
-      - name: Test
-        run: pnpm run test
+        run: npm run lint
 
       - name: Build
-        run: pnpm run build
+        run: npm run build

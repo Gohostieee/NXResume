@@ -7,7 +7,8 @@ on:
 
 jobs:
   sync:
-    if: github.repository == 'AmruthPillai/Reactive-Resume'
+    # Disabled by default - configure Crowdin secrets to enable
+    if: false
     runs-on: ubuntu-latest
 
     steps:

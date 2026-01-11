@@ -77,6 +77,10 @@ See `.env.example` for full details.
 
 Inspired by and based on [Reactive Resume](https://github.com/AmruthPillai/Reactive-Resume) by Amruth Pillai and the community.
 
+## Maintainer
+
+Built and maintained by [webv1.com](https://webv1.com)
+
 ## License
 
 MIT License. See `LICENSE.md`.

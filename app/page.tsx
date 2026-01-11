@@ -366,7 +366,18 @@ export default function HomePage() {
 
         <footer className="mx-auto flex w-full max-w-6xl flex-col items-start gap-4 px-6 pb-10 text-xs text-[#1a1711]/60 sm:flex-row sm:items-center sm:justify-between">
           <p>Open-source resume builder, no SaaS energy.</p>
-          <p>RX Resume inspired, Next.js rebuilt.</p>
+          <div className="flex items-center gap-4">
+            <p>RX Resume inspired, Next.js rebuilt.</p>
+            <span className="text-[#1a1711]/40">•</span>
+            <a
+              href="https://webv1.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-[#1a1711]/70 transition hover:text-[#1a1711]"
+            >
+              webv1.com
+            </a>
+          </div>
         </footer>
       </div>
     </main>

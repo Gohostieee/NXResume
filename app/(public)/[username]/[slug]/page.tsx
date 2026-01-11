@@ -87,11 +87,22 @@ export default function PublicResumePage() {
 
       {/* Footer */}
       <footer className="border-t bg-background py-4">
-        <div className="container text-center text-sm text-foreground/60">
-          Built with{" "}
-          <Link href="/" className="text-primary hover:underline">
-            NXResume
-          </Link>
+        <div className="container flex flex-col items-center justify-center gap-2 text-center text-sm text-foreground/60 sm:flex-row sm:gap-4">
+          <div>
+            Built with{" "}
+            <Link href="/" className="text-primary hover:underline">
+              NXResume
+            </Link>
+          </div>
+          <span className="hidden sm:inline text-foreground/40">•</span>
+          <a
+            href="https://webv1.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            webv1.com
+          </a>
         </div>
       </footer>
     </div>

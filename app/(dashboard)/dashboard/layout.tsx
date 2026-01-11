@@ -51,8 +51,20 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        <div className="border-t p-4">
-          <UserButton afterSignOutUrl="/" />
+        <div className="mt-auto space-y-4">
+          <div className="px-4 text-xs text-muted-foreground">
+            <a
+              href="https://webv1.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition"
+            >
+              Built by webv1.com
+            </a>
+          </div>
+          <div className="border-t p-4">
+            <UserButton afterSignOutUrl="/" />
+          </div>
         </div>
       </aside>
 

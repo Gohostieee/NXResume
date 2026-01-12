@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import puppeteer, { type Browser, type Page } from "puppeteer";
 import { PDFDocument } from "pdf-lib";
+import chromium from "@sparticuz/chromium";
 
 export const runtime = "nodejs";
 
@@ -27,11 +28,14 @@ async function generatePDFWithRetry(
   let page: Page | null = null;
 
   try {
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    // Use @sparticuz/chromium for serverless environments (Vercel, AWS Lambda, etc.)
+    // Falls back to local Chrome if PUPPETEER_EXECUTABLE_PATH is set
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || await chromium.executablePath();
+
     browser = await puppeteer.launch({
       headless: true,
-      ...(executablePath ? { executablePath } : {}),
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      executablePath,
+      args: chromium.args,
     });
 
     page = await browser.newPage();

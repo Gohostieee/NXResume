@@ -3,8 +3,12 @@ import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import puppeteer, { type Browser, type Page } from "puppeteer";
+import puppeteerCore from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import { PDFDocument } from "pdf-lib";
+
+type Browser = Awaited<ReturnType<typeof puppeteerCore.launch>>;
+type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
 export const runtime = "nodejs";
 
@@ -27,11 +31,11 @@ async function generatePDFWithRetry(
   let page: Page | null = null;
 
   try {
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    browser = await puppeteer.launch({
+    // Use @sparticuz/chromium for serverless environments (Vercel)
+    browser = await puppeteerCore.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
       headless: true,
-      ...(executablePath ? { executablePath } : {}),
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
     page = await browser.newPage();

@@ -9,6 +9,7 @@ const nextConfig = {
       },
     ],
   },
+  serverExternalPackages: ["@sparticuz/chromium"],
 };
 
 module.exports = nextConfig;

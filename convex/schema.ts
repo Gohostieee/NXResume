@@ -89,4 +89,28 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  applications: defineTable({
+    userId: v.id("users"),
+    jobDescription: v.string(),
+    title: v.string(),
+    company: v.string(),
+    categories: v.optional(v.array(v.string())),
+    status: v.union(
+      v.literal("not_applied"),
+      v.literal("applied"),
+      v.literal("interviewing"),
+      v.literal("offer"),
+      v.literal("rejected"),
+      v.literal("withdrawn"),
+    ),
+    extractionState: v.union(
+      v.literal("pending"),
+      v.literal("success"),
+      v.literal("failed"),
+    ),
+    extractionError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
 });

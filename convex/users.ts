@@ -128,6 +128,16 @@ export const deleteUser = mutation({
       await ctx.db.delete(resume._id);
     }
 
+    // Delete all applications
+    const applications = await ctx.db
+      .query("applications")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    for (const application of applications) {
+      await ctx.db.delete(application._id);
+    }
+
     await ctx.db.delete(user._id);
   },
 });

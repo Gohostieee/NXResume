@@ -2,7 +2,14 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CopySimple, DotsSixVertical, Eye, EyeSlash, PencilSimple, Trash } from "@phosphor-icons/react";
+import {
+  CopySimple,
+  DotsSixVertical,
+  Eye,
+  EyeSlash,
+  PencilSimple,
+  Trash,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -43,7 +50,7 @@ export const SectionListItem = ({
       className={cn(
         "group flex items-center gap-2 rounded-lg border bg-background p-3 transition-colors",
         isDragging && "opacity-50",
-        !visible && "opacity-50"
+        !visible && "opacity-50",
       )}
     >
       <Button
@@ -56,52 +63,28 @@ export const SectionListItem = ({
         <DotsSixVertical className="h-4 w-4" />
       </Button>
 
-      <div
-        className="flex-1 cursor-pointer truncate"
-        onClick={onUpdate}
-      >
-        <p className="font-medium truncate">{title || "(Untitled)"}</p>
-        {description && (
-          <p className="text-xs text-muted-foreground truncate">{description}</p>
-        )}
+      <div className="min-w-0 flex-1 cursor-pointer" onClick={onUpdate}>
+        <p className="truncate font-medium">{title || "(Untitled)"}</p>
+        {description && <p className="truncate text-xs text-muted-foreground">{description}</p>}
       </div>
 
       <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onToggleVisibility}
-        >
-          {visible ? (
-            <Eye className="h-4 w-4" />
-          ) : (
-            <EyeSlash className="h-4 w-4" />
-          )}
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onToggleVisibility}>
+          {visible ? <Eye className="h-4 w-4" /> : <EyeSlash className="h-4 w-4" />}
         </Button>
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onDuplicate}
-        >
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDuplicate}>
           <CopySimple className="h-4 w-4" />
         </Button>
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onUpdate}
-        >
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onUpdate}>
           <PencilSimple className="h-4 w-4" />
         </Button>
 
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 text-destructive hover:text-destructive"
+          className="text-destructive hover:text-destructive h-7 w-7"
           onClick={onDelete}
         >
           <Trash className="h-4 w-4" />

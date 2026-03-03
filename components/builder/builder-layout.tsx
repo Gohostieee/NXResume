@@ -8,8 +8,15 @@ import { AutoSave } from "./auto-save";
 import { BuilderHeader } from "./builder-header";
 import { BuilderBottomDock } from "./bottom-dock";
 import { Panel, PanelGroup, PanelResizeHandle } from "@/components/ui/resizable-panel";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
+import { cn } from "@/lib/utils";
 import { useBuilderStore } from "@/stores/builder";
 
 type BuilderLayoutProps = {
@@ -41,7 +48,7 @@ export function BuilderLayout(_props: BuilderLayoutProps) {
             minSize={25}
             maxSize={45}
             defaultSize={30}
-            className={!leftHandle.isDragging ? "transition-[flex]" : ""}
+            className={cn("min-w-0", !leftHandle.isDragging && "transition-[flex]")}
             onResize={leftSetSize}
           >
             <LeftSidebar />
@@ -50,7 +57,7 @@ export function BuilderLayout(_props: BuilderLayoutProps) {
             isDragging={leftHandle.isDragging}
             onDragging={leftHandle.setDragging}
           />
-          <Panel>
+          <Panel className="min-w-0">
             <CenterSlot />
           </Panel>
           <PanelResizeHandle
@@ -61,7 +68,7 @@ export function BuilderLayout(_props: BuilderLayoutProps) {
             minSize={25}
             maxSize={45}
             defaultSize={30}
-            className={!rightHandle.isDragging ? "transition-[flex]" : ""}
+            className={cn("min-w-0", !rightHandle.isDragging && "transition-[flex]")}
             onResize={rightSetSize}
           >
             <RightSidebar />

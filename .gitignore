@@ -60,3 +60,6 @@ next-env.d.ts
 # Lingui Compiled Messages
 locales/_build/
 locales/*/messages.*js
+
+# clerk configuration (can include secrets)
+/.clerk/

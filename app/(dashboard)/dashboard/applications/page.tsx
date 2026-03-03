@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import {
   Briefcase,
   CaretDown,
   DotsThreeVertical,
+  FileText,
   PencilSimple,
   Plus,
   Sparkle,
@@ -105,8 +107,10 @@ type Notice = {
 
 export default function ApplicationsPage() {
   const applications = useQuery(api.applications.list);
+  const resumes = useQuery(api.resumes.list);
   const createFromIntake = useMutation(api.applications.createFromIntake);
   const updateApplication = useMutation(api.applications.update);
+  const assignTailoredResume = useMutation(api.applications.assignTailoredResume);
   const retryExtraction = useMutation(api.applications.retryExtraction);
   const removeApplication = useMutation(api.applications.remove);
   const { apiKey, model, maxTokens, baseURL } = useOpenAiStore();
@@ -124,6 +128,11 @@ export default function ApplicationsPage() {
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
 
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
+  const [resumeImportMode, setResumeImportMode] = useState<"base" | "new">("base");
+  const [selectedBaseResumeId, setSelectedBaseResumeId] = useState<string>("");
+  const [isAssigningResume, setIsAssigningResume] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   useEffect(() => {
@@ -141,6 +150,12 @@ export default function ApplicationsPage() {
     return () => clearInterval(interval);
   }, [isImporting]);
 
+  useEffect(() => {
+    if (!resumes || resumes.length === 0) return;
+    if (selectedBaseResumeId) return;
+    setSelectedBaseResumeId(resumes[0]._id);
+  }, [resumes, selectedBaseResumeId]);
+
   const descriptionValidationMessage = useMemo(() => {
     const trimmed = jobDescription.trim();
 
@@ -155,6 +170,25 @@ export default function ApplicationsPage() {
   }, [jobDescription]);
 
   const canImport = !isImporting && descriptionValidationMessage === null;
+  const hasRegularResumes = (resumes?.length ?? 0) > 0;
+  const canAssignResume =
+    !isAssigningResume &&
+    Boolean(selectedApplicationId) &&
+    (resumeImportMode === "new" || Boolean(selectedBaseResumeId));
+
+  const openResumeDialog = (applicationId: string) => {
+    setSelectedApplicationId(applicationId);
+    if (hasRegularResumes) {
+      setResumeImportMode("base");
+      if (!selectedBaseResumeId && resumes && resumes.length > 0) {
+        setSelectedBaseResumeId(resumes[0]._id);
+      }
+    } else {
+      setResumeImportMode("new");
+      setSelectedBaseResumeId("");
+    }
+    setIsResumeDialogOpen(true);
+  };
 
   const handleImport = async () => {
     if (!canImport) return;
@@ -249,6 +283,38 @@ export default function ApplicationsPage() {
         title: "Delete failed",
         description: error instanceof Error ? error.message : "Could not delete application.",
       });
+    }
+  };
+
+  const handleAssignResume = async () => {
+    if (!canAssignResume || !selectedApplicationId) return;
+
+    setIsAssigningResume(true);
+    try {
+      await assignTailoredResume({
+        applicationId: selectedApplicationId as any,
+        mode: resumeImportMode,
+        baseResumeId:
+          resumeImportMode === "base" ? (selectedBaseResumeId as any) : undefined,
+      });
+
+      setIsResumeDialogOpen(false);
+      setNotice({
+        variant: "success",
+        title: "Resume assigned",
+        description: "A tailored resume was linked to this job application.",
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        title: "Resume assignment failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not assign a tailored resume to this application.",
+      });
+    } finally {
+      setIsAssigningResume(false);
     }
   };
 
@@ -511,11 +577,12 @@ export default function ApplicationsPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <div className="min-w-[900px]">
-                <div className="grid grid-cols-[2fr_1.8fr_1.8fr_1fr_1.2fr_1fr] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
+                <div className="grid grid-cols-[2fr_1.7fr_1.6fr_1fr_1.2fr_1.2fr_1fr] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
                   <div>Title</div>
                   <div>Company</div>
                   <div>Categories</div>
                   <div>Status</div>
+                  <div>Resume</div>
                   <div>Imported</div>
                   <div className="text-right">Actions</div>
                 </div>
@@ -524,7 +591,7 @@ export default function ApplicationsPage() {
                   {applications.map((application) => (
                     <div
                       key={application._id}
-                      className="grid grid-cols-[2fr_1.8fr_1.8fr_1fr_1.2fr_1fr] items-center gap-4 py-4"
+                      className="grid grid-cols-[2fr_1.7fr_1.6fr_1fr_1.2fr_1.2fr_1fr] items-center gap-4 py-4"
                     >
                       <div>
                         <div className="font-medium">{application.title}</div>
@@ -577,6 +644,28 @@ export default function ApplicationsPage() {
                         )}
                       </div>
                       <div>
+                        {application.tailoredResumeId ? (
+                          <Link
+                            href={`/builder/${application.tailoredResumeId}?from=applications&applicationId=${application._id}`}
+                          >
+                            <Button variant="outline" size="sm" className="h-8">
+                              <FileText className="mr-2 h-4 w-4" />
+                              View Resume
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => openResumeDialog(application._id)}
+                          >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Import Resume
+                          </Button>
+                        )}
+                      </div>
+                      <div>
                         <Select
                           value={application.status}
                           onValueChange={(value) =>
@@ -624,6 +713,10 @@ export default function ApplicationsPage() {
                             <DropdownMenuItem onClick={() => openEditDialog(application as any)}>
                               <PencilSimple className="mr-2 h-4 w-4" />
                               Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openResumeDialog(application._id)}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              {application.tailoredResumeId ? "Replace Resume" : "Import Resume"}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -681,6 +774,79 @@ export default function ApplicationsPage() {
             </Button>
             <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
               {isSavingEdit ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isResumeDialogOpen} onOpenChange={setIsResumeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Tailored Resume</DialogTitle>
+            <DialogDescription>
+              Choose an existing resume as the base, or create a new resume for this application.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={resumeImportMode === "base" ? "default" : "outline"}
+                onClick={() => setResumeImportMode("base")}
+                disabled={!hasRegularResumes || isAssigningResume}
+              >
+                Use Existing Resume
+              </Button>
+              <Button
+                type="button"
+                variant={resumeImportMode === "new" ? "default" : "outline"}
+                onClick={() => setResumeImportMode("new")}
+                disabled={isAssigningResume}
+              >
+                Create New Resume
+              </Button>
+            </div>
+
+            {resumeImportMode === "base" ? (
+              hasRegularResumes ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="base-resume">Base Resume</Label>
+                  <Select value={selectedBaseResumeId} onValueChange={setSelectedBaseResumeId}>
+                    <SelectTrigger id="base-resume">
+                      <SelectValue placeholder="Select a resume" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(resumes ?? []).map((resume) => (
+                        <SelectItem key={resume._id} value={resume._id}>
+                          {resume.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="text-sm text-warning">
+                  No regular resumes found. Switch to "Create New Resume" to continue.
+                </div>
+              )
+            ) : (
+              <div className="text-sm text-foreground/70">
+                A new blank resume will be created and linked only to this application.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsResumeDialogOpen(false)}
+              disabled={isAssigningResume}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAssignResume} disabled={!canAssignResume}>
+              {isAssigningResume ? "Assigning..." : "Import Resume"}
             </Button>
           </DialogFooter>
         </DialogContent>

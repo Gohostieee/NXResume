@@ -50,6 +50,9 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+const isRegularResume = (scope?: "regular" | "application_tailored") =>
+  scope === undefined || scope === "regular";
+
 export const create = mutation({
   args: {
     title: v.string(),
@@ -97,6 +100,8 @@ export const create = mutation({
       data,
       visibility: args.visibility || "private",
       locked: false,
+      scope: "regular",
+      applicationId: undefined,
       userId: user._id,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -127,11 +132,13 @@ export const list = query({
 
     if (!user) return [];
 
-    return await ctx.db
+    const resumes = await ctx.db
       .query("resumes")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
+
+    return resumes.filter((resume) => isRegularResume(resume.scope));
   },
 });
 
@@ -172,7 +179,7 @@ export const getPublicByUsernameSlug = query({
       .withIndex("by_user_slug", (q) => q.eq("userId", user._id).eq("slug", slug))
       .first();
 
-    if (!resume || resume.visibility !== "public") {
+    if (!resume || resume.visibility !== "public" || resume.scope === "application_tailored") {
       return null;
     }
 
@@ -250,6 +257,16 @@ export const remove = mutation({
 
     if (stats) await ctx.db.delete(stats._id);
 
+    if (resume.scope === "application_tailored" && resume.applicationId) {
+      const application = await ctx.db.get(resume.applicationId);
+      if (application?.tailoredResumeId === id) {
+        await ctx.db.patch(resume.applicationId, {
+          tailoredResumeId: undefined,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
     await ctx.db.delete(id);
   },
 });
@@ -323,6 +340,8 @@ export const duplicate = mutation({
       data: resume.data,
       visibility: "private",
       locked: false,
+      scope: "regular",
+      applicationId: undefined,
       userId: user._id,
       createdAt: Date.now(),
       updatedAt: Date.now(),

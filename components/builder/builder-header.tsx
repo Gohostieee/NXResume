@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Lock } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { useAutoSaveStore } from "@/stores/auto-save";
@@ -8,9 +9,14 @@ import { useBuilderStore } from "@/stores/builder";
 import { useResumeStore } from "@/stores/resume";
 
 export const BuilderHeader = () => {
+  const searchParams = useSearchParams();
   const title = useResumeStore((state) => state.resume.title);
   const locked = useResumeStore((state) => state.resume.locked);
   const isSaving = useAutoSaveStore((state) => state.isSaving);
+  const backHref =
+    searchParams.get("from") === "applications"
+      ? "/dashboard/applications"
+      : "/dashboard/resumes";
 
   const toggle = useBuilderStore((state) => state.toggle);
 
@@ -26,7 +32,7 @@ export const BuilderHeader = () => {
           <ArrowLeft className="h-4 w-4" />
         </Button>
 
-        <Link href="/dashboard/resumes" className="hidden lg:flex">
+        <Link href={backHref} className="hidden lg:flex">
           <Button size="icon" variant="ghost">
             <ArrowLeft className="h-4 w-4" />
           </Button>

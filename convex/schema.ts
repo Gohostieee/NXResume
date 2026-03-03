@@ -28,12 +28,16 @@ export default defineSchema({
     data: v.any(), // Resume JSON data (same structure as current schema)
     visibility: v.union(v.literal("private"), v.literal("public")),
     locked: v.boolean(),
+    scope: v.optional(v.union(v.literal("regular"), v.literal("application_tailored"))),
+    applicationId: v.optional(v.id("applications")),
     userId: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_slug", ["userId", "slug"]),
+    .index("by_user_slug", ["userId", "slug"])
+    .index("by_user_scope", ["userId", "scope"])
+    .index("by_user_application", ["userId", "applicationId"]),
 
   statistics: defineTable({
     views: v.number(),
@@ -96,6 +100,7 @@ export default defineSchema({
     title: v.string(),
     company: v.string(),
     categories: v.optional(v.array(v.string())),
+    tailoredResumeId: v.optional(v.id("resumes")),
     status: v.union(
       v.literal("not_applied"),
       v.literal("applied"),

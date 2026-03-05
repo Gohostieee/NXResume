@@ -26,7 +26,7 @@ const CustomFieldRow = ({ field, onChange, onRemove }: CustomFieldProps) => {
 
   return (
     <Reorder.Item value={field} dragListener={false} dragControls={controls} className="space-y-2">
-      <div className="flex items-end gap-2">
+      <div className="flex min-w-0 items-end gap-2">
         <Button
           size="icon"
           variant="ghost"
@@ -65,7 +65,7 @@ const CustomFieldRow = ({ field, onChange, onRemove }: CustomFieldProps) => {
         </Popover>
 
         <Input
-          className="flex-1"
+          className="min-w-0 flex-1"
           placeholder="Name"
           value={field.name}
           onChange={(event) => {
@@ -74,7 +74,7 @@ const CustomFieldRow = ({ field, onChange, onRemove }: CustomFieldProps) => {
         />
 
         <Input
-          className="flex-1"
+          className="min-w-0 flex-1"
           placeholder="Value"
           value={field.value}
           onChange={(event) => {

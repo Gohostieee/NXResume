@@ -84,13 +84,14 @@ export const PictureSection = () => {
         </div>
       </div>
 
-      <div className="flex w-full flex-col gap-y-1.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-y-1.5">
         <Label htmlFor="basics.picture.url">Picture</Label>
-        <div className="flex items-center gap-x-2">
+        <div className="flex min-w-0 items-center gap-x-2">
           <input ref={inputRef} hidden type="file" accept="image/*" onChange={onSelectImage} />
 
           <Input
             id="basics.picture.url"
+            className="min-w-0 flex-1"
             placeholder="https://..."
             value={picture.url}
             onChange={(event) => {

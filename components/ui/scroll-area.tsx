@@ -25,13 +25,13 @@ export const ScrollArea = forwardRef<
     <ScrollAreaPrimitive.Root
       ref={ref}
       type={type}
-      className={cn("relative overflow-hidden", className)}
+      className={cn("relative min-w-0 overflow-hidden", className)}
       {...props}
     >
-      <ScrollAreaPrimitive.Viewport
-        className={cn("size-full rounded-[inherit]", allowOverflow && "!overflow-visible")}
-      >
-        {children}
+      <ScrollAreaPrimitive.Viewport className="size-full min-w-0 rounded-[inherit]">
+        <div className={cn("w-full min-w-0", allowOverflow && "overflow-visible")}>
+          {children}
+        </div>
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar orientation={orientation} className={cn(hideScrollbar && "opacity-0")} />
       <ScrollAreaPrimitive.Corner />

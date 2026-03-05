@@ -142,6 +142,7 @@ const Link = ({ url, label, className }: LinkProps) => {
       target="_blank"
       rel="noreferrer noopener nofollow"
       className={className}
+      style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
     >
       {label ?? (url.label || url.href)}
     </a>
@@ -211,7 +212,9 @@ const Section = <T,>({
                 )}
 
                 {keywords !== undefined && keywords.length > 0 && (
-                  <p className="text-sm">{keywords.join(", ")}</p>
+                  <p className="text-sm" style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                    {keywords.join(", ")}
+                  </p>
                 )}
               </div>
             );
@@ -477,14 +480,14 @@ const Projects = () => {
     >
       {(item) => (
         <div className="flex items-start justify-between">
-          <div className="text-left space-y-0.5">
+          <div className="text-left space-y-0.5" style={{ minWidth: 0 }}>
             <LinkedEntity
               name={item.name}
               url={item.url}
               separateLinks={section.separateLinks}
               className="font-bold"
             />
-            <div>{item.description}</div>
+            <div style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>{item.description}</div>
           </div>
 
           <div className="shrink-0 text-right">

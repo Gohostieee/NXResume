@@ -23,11 +23,11 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
-      <aside className="flex w-64 flex-col border-r bg-secondary/30">
+      <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r bg-secondary/30">
         <div className="flex h-16 items-center gap-2 border-b px-6">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <House className="h-5 w-5" />
-            NXResume
+          <Link href="/" className="flex min-w-0 items-center gap-2 font-semibold">
+            <House className="h-5 w-5 shrink-0" />
+            <span className="truncate">NXResume</span>
           </Link>
         </div>
 
@@ -39,14 +39,14 @@ export default function DashboardLayout({
                 key={item.name}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-primary text-primary-foreground"
                     : "text-foreground/60 hover:bg-secondary hover:text-foreground"
                 )}
               >
-                <item.icon className="h-5 w-5" />
-                {item.name}
+                <item.icon className="h-5 w-5 shrink-0" />
+                <span className="truncate">{item.name}</span>
               </Link>
             );
           })}
@@ -58,7 +58,7 @@ export default function DashboardLayout({
               href="https://webv1.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-foreground transition"
+              className="block truncate transition hover:text-foreground"
             >
               Built by webv1.com
             </a>

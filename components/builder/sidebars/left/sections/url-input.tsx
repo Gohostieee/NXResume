@@ -22,12 +22,12 @@ export const URLInput = forwardRef<HTMLInputElement, Props>(
 
     return (
       <div className="space-y-1.5">
-        <div className="flex gap-x-2">
+        <div className="flex min-w-0 gap-x-2">
           <Input
             ref={ref}
             id={id}
             value={value.href}
-            className="flex-1"
+            className="min-w-0 flex-1"
             placeholder={placeholder}
             onChange={(event) => {
               onChange({ ...value, href: event.target.value });

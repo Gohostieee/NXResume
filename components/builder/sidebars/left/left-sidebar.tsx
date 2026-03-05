@@ -77,8 +77,8 @@ export function LeftSidebar() {
           <h2 className="text-lg font-semibold">Resume Editor</h2>
         </div>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="space-y-6 p-4">
+        <ScrollArea allowOverflow className="flex-1 min-h-0 w-full">
+          <div className="w-full min-w-0 space-y-6 p-4">
             <BasicsSection />
 
             <Separator />

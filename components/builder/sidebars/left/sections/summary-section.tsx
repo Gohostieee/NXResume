@@ -15,9 +15,9 @@ export const SummarySection = () => {
   const toggleCollapseSection = useResumeStore((state) => state.toggleCollapseSection);
 
   return (
-    <section id="summary" className="space-y-4">
+    <section id="summary" className="min-w-0 max-w-full space-y-4 overflow-hidden">
       <header className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <Button
             size="icon"
             variant="ghost"
@@ -28,9 +28,11 @@ export const SummarySection = () => {
           >
             <CaretRight className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")} />
           </Button>
-          <h3 className="font-semibold">{section.name}</h3>
+          <h3 className="min-w-0 truncate font-semibold">{section.name}</h3>
         </div>
-        <SectionOptions id="summary" />
+        <div className="shrink-0">
+          <SectionOptions id="summary" />
+        </div>
       </header>
 
       {!collapsed && (

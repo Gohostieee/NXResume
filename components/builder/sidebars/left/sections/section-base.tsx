@@ -88,9 +88,9 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
   };
 
   return (
-    <section id={id} className="space-y-3">
+    <section id={id} className="w-full min-w-0 space-y-3 overflow-hidden">
       <header className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <Button
             size="icon"
             variant="ghost"
@@ -101,11 +101,11 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
           >
             <CaretRight className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-90")} />
           </Button>
-          <h3 className="font-semibold">{section.name}</h3>
-          <span className="text-xs text-muted-foreground">({section.items.length})</span>
+          <h3 className="min-w-0 flex-1 truncate font-semibold">{section.name}</h3>
+          <span className="shrink-0 text-xs text-muted-foreground">({section.items.length})</span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="shrink-0 flex items-center gap-1">
           <SectionOptions id={id} />
           <Button size="sm" variant="ghost" onClick={onCreate}>
             <Plus className="h-4 w-4" />

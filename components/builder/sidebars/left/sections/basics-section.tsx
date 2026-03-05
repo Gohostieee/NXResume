@@ -19,7 +19,7 @@ export const BasicsSection = () => {
   const toggleCollapseSection = useResumeStore((state) => state.toggleCollapseSection);
 
   return (
-    <section id="basics" className="space-y-4">
+    <section id="basics" className="min-w-0 max-w-full space-y-4 overflow-hidden">
       <header className="flex items-center gap-2">
         <Button
           size="icon"

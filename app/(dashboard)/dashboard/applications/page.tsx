@@ -576,14 +576,14 @@ export default function ApplicationsPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <div className="min-w-[900px]">
-                <div className="grid grid-cols-[2fr_1.7fr_1.6fr_1fr_1.2fr_1.2fr_1fr] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
+              <div className="min-w-[1100px]">
+                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_120px_56px] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
                   <div>Title</div>
                   <div>Company</div>
-                  <div>Categories</div>
-                  <div>Status</div>
-                  <div>Resume</div>
-                  <div>Imported</div>
+                  <div className="text-center">Categories</div>
+                  <div className="text-center">Status</div>
+                  <div className="text-center">Resume</div>
+                  <div className="text-center">Imported</div>
                   <div className="text-right">Actions</div>
                 </div>
 
@@ -591,10 +591,10 @@ export default function ApplicationsPage() {
                   {applications.map((application) => (
                     <div
                       key={application._id}
-                      className="grid grid-cols-[2fr_1.7fr_1.6fr_1fr_1.2fr_1.2fr_1fr] items-center gap-4 py-4"
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_120px_56px] items-center gap-4 py-4"
                     >
-                      <div>
-                        <div className="font-medium">{application.title}</div>
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{application.title}</div>
                         {application.extractionState === "failed" && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-warning">
                             <Warning className="h-3 w-3" />
@@ -602,17 +602,17 @@ export default function ApplicationsPage() {
                           </div>
                         )}
                       </div>
-                      <div className="text-foreground/80">{application.company}</div>
-                      <div>
+                      <div className="min-w-0 truncate text-foreground/80">{application.company}</div>
+                      <div className="flex min-w-0 justify-center">
                         {application.categories && application.categories.length > 0 ? (
                           <Popover>
                             <PopoverTrigger asChild>
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 max-w-[220px] justify-between gap-2 rounded-full border-border px-2 text-xs text-foreground hover:bg-secondary/70"
+                                className="h-7 w-[180px] justify-between gap-2 rounded-full border-border px-2 text-xs text-foreground hover:bg-secondary/70"
                               >
-                                <span className="truncate">
+                                <span className="block min-w-0 truncate">
                                   {application.categories
                                     .slice(0, CATEGORY_PREVIEW_COUNT)
                                     .join(" | ")}
@@ -643,29 +643,7 @@ export default function ApplicationsPage() {
                           <span className="text-xs text-foreground/50">No categories</span>
                         )}
                       </div>
-                      <div>
-                        {application.tailoredResumeId ? (
-                          <Link
-                            href={`/builder/${application.tailoredResumeId}?from=applications&applicationId=${application._id}`}
-                          >
-                            <Button variant="outline" size="sm" className="h-8">
-                              <FileText className="mr-2 h-4 w-4" />
-                              View Resume
-                            </Button>
-                          </Link>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8"
-                            onClick={() => openResumeDialog(application._id)}
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Import Resume
-                          </Button>
-                        )}
-                      </div>
-                      <div>
+                      <div className="min-w-0">
                         <Select
                           value={application.status}
                           onValueChange={(value) =>
@@ -674,7 +652,7 @@ export default function ApplicationsPage() {
                           disabled={changingStatusId === application._id}
                         >
                           <SelectTrigger
-                            className={`h-7 rounded-full border px-3 text-xs font-semibold ${getStatusMeta(application.status).className}`}
+                            className={`h-7 w-full rounded-full border px-3 text-xs font-semibold ${getStatusMeta(application.status).className}`}
                           >
                             <SelectValue placeholder="Change status" />
                           </SelectTrigger>
@@ -687,7 +665,29 @@ export default function ApplicationsPage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="text-sm text-foreground/70">
+                      <div className="flex min-w-0 justify-center">
+                        {application.tailoredResumeId ? (
+                          <Link
+                            href={`/builder/${application.tailoredResumeId}?from=applications&applicationId=${application._id}`}
+                          >
+                            <Button variant="outline" size="sm" className="h-8 w-[140px]">
+                              <FileText className="mr-2 h-4 w-4" />
+                              View Resume
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-[140px]"
+                            onClick={() => openResumeDialog(application._id)}
+                          >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Import Resume
+                          </Button>
+                        )}
+                      </div>
+                      <div className="text-center text-sm text-foreground/70">
                         {new Date(application.createdAt).toLocaleDateString()}
                       </div>
                       <div className="flex justify-end">
@@ -792,7 +792,7 @@ export default function ApplicationsPage() {
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
-                variant={resumeImportMode === "base" ? "default" : "outline"}
+                variant={resumeImportMode === "base" ? "primary" : "outline"}
                 onClick={() => setResumeImportMode("base")}
                 disabled={!hasRegularResumes || isAssigningResume}
               >
@@ -800,7 +800,7 @@ export default function ApplicationsPage() {
               </Button>
               <Button
                 type="button"
-                variant={resumeImportMode === "new" ? "default" : "outline"}
+                variant={resumeImportMode === "new" ? "primary" : "outline"}
                 onClick={() => setResumeImportMode("new")}
                 disabled={isAssigningResume}
               >

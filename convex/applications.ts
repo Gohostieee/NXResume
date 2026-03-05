@@ -5,6 +5,7 @@ const MAX_JOB_DESCRIPTION_LENGTH = 20_000;
 const MAX_CATEGORIES = 10;
 const UNKNOWN_TITLE = "Unknown Title";
 const UNKNOWN_COMPANY = "Unknown Company";
+const NO_SIGNIFICANT_INFORMATION = "No significant information found.";
 
 const extractionState = v.union(
   v.literal("pending"),
@@ -20,6 +21,30 @@ const applicationStatus = v.union(
   v.literal("rejected"),
   v.literal("withdrawn"),
 );
+
+const companyResearchValidator = v.object({
+  companyName: v.string(),
+  shortDescription: v.string(),
+  companyOverview: v.string(),
+  recentEventsNews: v.string(),
+  strengthsGoodAspects: v.string(),
+  fundingFinancials: v.string(),
+  futureOutlook: v.string(),
+  missionValues: v.string(),
+  otherNotablePoints: v.string(),
+});
+
+type CompanyResearchInput = {
+  companyName: string;
+  shortDescription: string;
+  companyOverview: string;
+  recentEventsNews: string;
+  strengthsGoodAspects: string;
+  fundingFinancials: string;
+  futureOutlook: string;
+  missionValues: string;
+  otherNotablePoints: string;
+};
 
 const normalizeText = (value: string) => value.trim();
 
@@ -46,6 +71,25 @@ const normalizeCategories = (values: string[] | undefined) => {
     .slice(0, MAX_CATEGORIES);
 
   return Array.from(new Set(normalized));
+};
+
+const normalizeResearchText = (value: string | undefined) =>
+  normalizeName(value, NO_SIGNIFICANT_INFORMATION);
+
+const normalizeCompanyResearch = (value: CompanyResearchInput | undefined) => {
+  if (!value) return undefined;
+
+  return {
+    companyName: normalizeName(value.companyName, UNKNOWN_COMPANY),
+    shortDescription: normalizeResearchText(value.shortDescription),
+    companyOverview: normalizeResearchText(value.companyOverview),
+    recentEventsNews: normalizeResearchText(value.recentEventsNews),
+    strengthsGoodAspects: normalizeResearchText(value.strengthsGoodAspects),
+    fundingFinancials: normalizeResearchText(value.fundingFinancials),
+    futureOutlook: normalizeResearchText(value.futureOutlook),
+    missionValues: normalizeResearchText(value.missionValues),
+    otherNotablePoints: normalizeResearchText(value.otherNotablePoints),
+  };
 };
 
 const defaultResumeData = {
@@ -251,11 +295,33 @@ export const list = query({
   },
 });
 
+export const getById = query({
+  args: { id: v.id("applications") },
+  handler: async (ctx, { id }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) return null;
+
+    const application = await ctx.db.get(id);
+    if (!application) return null;
+    if (application.userId !== user._id) return null;
+
+    return application;
+  },
+});
+
 export const createFromIntake = mutation({
   args: {
     jobDescription: v.string(),
     title: v.string(),
     company: v.string(),
+    companyResearch: v.optional(companyResearchValidator),
     categories: v.optional(v.array(v.string())),
     extractionState,
     extractionError: v.optional(v.string()),
@@ -280,6 +346,7 @@ export const createFromIntake = mutation({
       jobDescription: normalizeBoundedDescription(args.jobDescription),
       title: normalizeName(args.title, UNKNOWN_TITLE),
       company: normalizeName(args.company, UNKNOWN_COMPANY),
+      companyResearch: normalizeCompanyResearch(args.companyResearch),
       categories: normalizeCategories(args.categories),
       status: "not_applied",
       extractionState: args.extractionState,
@@ -436,6 +503,7 @@ export const retryExtraction = mutation({
     id: v.id("applications"),
     title: v.string(),
     company: v.string(),
+    companyResearch: v.optional(companyResearchValidator),
     categories: v.optional(v.array(v.string())),
     extractionState,
     extractionError: v.optional(v.string()),
@@ -463,14 +531,20 @@ export const retryExtraction = mutation({
 
     const extractionError = normalizeText(args.extractionError ?? "");
 
-    await ctx.db.patch(args.id, {
+    const patchData: Record<string, unknown> = {
       title: normalizeName(args.title, UNKNOWN_TITLE),
       company: normalizeName(args.company, UNKNOWN_COMPANY),
       categories: normalizeCategories(args.categories),
       extractionState: args.extractionState,
       extractionError: extractionError || undefined,
       updatedAt: Date.now(),
-    });
+    };
+
+    if (args.companyResearch !== undefined) {
+      patchData.companyResearch = normalizeCompanyResearch(args.companyResearch);
+    }
+
+    await ctx.db.patch(args.id, patchData);
 
     return args.id;
   },

@@ -8,11 +8,25 @@ type ApplicationIntakeRequest = {
   baseURL?: string | null;
 };
 
+export type CompanyResearchDetails = {
+  companyName: string;
+  shortDescription: string;
+  companyOverview: string;
+  recentEventsNews: string;
+  strengthsGoodAspects: string;
+  fundingFinancials: string;
+  futureOutlook: string;
+  missionValues: string;
+  otherNotablePoints: string;
+};
+
 export type ApplicationIntakeResponse = {
   title: string;
   company: string;
   categories: string[];
+  companyResearch?: CompanyResearchDetails;
   warning?: string;
+  companyResearchWarning?: string;
 };
 
 export const extractApplicationFromDescription = async ({

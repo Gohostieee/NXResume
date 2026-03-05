@@ -52,10 +52,21 @@ const profileSchema = z
   })
   .optional();
 
+const applicationSchema = z
+  .object({
+    id: z.string().optional(),
+    title: z.string().optional(),
+    company: z.string().optional(),
+    categories: z.array(z.string()).optional(),
+    jobDescription: z.string().optional(),
+  })
+  .optional();
+
 const requestSchema = z.object({
   instruction: z.string().min(1),
   resume: resumeEditSchema,
   profile: profileSchema,
+  application: applicationSchema,
   apiKey: z.string().optional(),
   model: z.string().optional(),
   maxTokens: z.number().int().positive().optional(),
@@ -73,14 +84,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const { instruction, resume, profile, apiKey, model, maxTokens, baseURL } = parsed.data;
+  const {
+    instruction,
+    resume,
+    profile,
+    application,
+    apiKey,
+    model,
+    maxTokens,
+    baseURL,
+  } = parsed.data;
   const resolvedApiKey = apiKey ?? process.env.OPENAI_API_KEY;
 
   if (!resolvedApiKey) {
-    return NextResponse.json(
-      { error: "Missing OpenAI API key" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Missing OpenAI API key" }, { status: 400 });
   }
 
   const openai = createOpenAI({
@@ -98,6 +115,9 @@ export async function POST(req: Request) {
       "",
       "Career profile context (may be partial):",
       JSON.stringify(profile ?? {}),
+      "",
+      "Application context for job-tailored resumes (may be empty):",
+      JSON.stringify(application ?? {}),
       "",
       "User instruction:",
       instruction,

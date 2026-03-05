@@ -15,7 +15,10 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { api } from "@/convex/_generated/api";
-import { extractApplicationFromDescription } from "@/lib/ai/application-intake-client";
+import {
+  extractApplicationFromDescription,
+  type CompanyResearchDetails,
+} from "@/lib/ai/application-intake-client";
 import { useOpenAiStore } from "@/stores/openai";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -96,6 +99,7 @@ const getStatusMeta = (status: string) =>
 const LOADING_STAGES = [
   "Analyzing job description...",
   "Extracting title, company, and categories...",
+  "Researching company...",
   "Saving application...",
 ];
 
@@ -134,6 +138,10 @@ export default function ApplicationsPage() {
   const [selectedBaseResumeId, setSelectedBaseResumeId] = useState<string>("");
   const [isAssigningResume, setIsAssigningResume] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [selectedCompanyResearch, setSelectedCompanyResearch] = useState<{
+    company: string;
+    research?: CompanyResearchDetails;
+  } | null>(null);
 
   useEffect(() => {
     if (!isImporting) {
@@ -200,9 +208,11 @@ export default function ApplicationsPage() {
     let extractedTitle = UNKNOWN_TITLE;
     let extractedCompany = UNKNOWN_COMPANY;
     let extractedCategories: string[] = [];
+    let extractedCompanyResearch: CompanyResearchDetails | undefined;
     let extractionState: "success" | "failed" = "success";
     let extractionError: string | undefined;
     let extractionWarning: string | undefined;
+    let companyResearchWarning: string | undefined;
 
     try {
       const result = await extractApplicationFromDescription({
@@ -216,7 +226,9 @@ export default function ApplicationsPage() {
       extractedTitle = result.title?.trim() || UNKNOWN_TITLE;
       extractedCompany = result.company?.trim() || UNKNOWN_COMPANY;
       extractedCategories = result.categories ?? [];
+      extractedCompanyResearch = result.companyResearch;
       extractionWarning = result.warning;
+      companyResearchWarning = result.companyResearchWarning;
     } catch (error) {
       extractionState = "failed";
       extractionError =
@@ -228,6 +240,7 @@ export default function ApplicationsPage() {
         jobDescription: trimmedDescription,
         title: extractedTitle,
         company: extractedCompany,
+        companyResearch: extractedCompanyResearch,
         categories: extractedCategories,
         extractionState,
         extractionError,
@@ -243,18 +256,22 @@ export default function ApplicationsPage() {
           description:
             "We saved the application, but AI extraction failed. You can retry extraction or edit fields manually.",
         });
-      } else if (extractionWarning) {
-        setNotice({
-          variant: "warning",
-          title: "Imported with partial extraction",
-          description: extractionWarning,
-        });
       } else {
-        setNotice({
-          variant: "success",
-          title: "Application imported",
-          description: "Job title, company, and categories were extracted and saved.",
-        });
+        const warnings = [extractionWarning, companyResearchWarning].filter(Boolean);
+
+        if (warnings.length > 0) {
+          setNotice({
+            variant: "warning",
+            title: "Imported with partial extraction",
+            description: warnings.join(" "),
+          });
+        } else {
+          setNotice({
+            variant: "success",
+            title: "Application imported",
+            description: "Job title, company, categories, and company research were saved.",
+          });
+        }
       }
     } catch (error) {
       setNotice({
@@ -381,16 +398,27 @@ export default function ApplicationsPage() {
         id: application._id as any,
         title: result.title || UNKNOWN_TITLE,
         company: result.company || UNKNOWN_COMPANY,
+        companyResearch: result.companyResearch,
         categories: result.categories ?? [],
         extractionState: "success",
         extractionError: undefined,
       });
 
-      setNotice({
-        variant: "success",
-        title: "Extraction retried",
-        description: "AI extraction completed and fields were updated.",
-      });
+      const warnings = [result.warning, result.companyResearchWarning].filter(Boolean);
+
+      if (warnings.length > 0) {
+        setNotice({
+          variant: "warning",
+          title: "Extraction retried with partial data",
+          description: warnings.join(" "),
+        });
+      } else {
+        setNotice({
+          variant: "success",
+          title: "Extraction retried",
+          description: "AI extraction completed and fields were updated.",
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to retry extraction.";
@@ -441,6 +469,39 @@ export default function ApplicationsPage() {
       setChangingStatusId(null);
     }
   };
+
+  const companyResearchSections = selectedCompanyResearch?.research
+    ? [
+        {
+          title: "Company Overview",
+          content: selectedCompanyResearch.research.companyOverview,
+        },
+        {
+          title: "Recent Events/News",
+          content: selectedCompanyResearch.research.recentEventsNews,
+        },
+        {
+          title: "Strengths/Good Aspects",
+          content: selectedCompanyResearch.research.strengthsGoodAspects,
+        },
+        {
+          title: "Funding & Financials",
+          content: selectedCompanyResearch.research.fundingFinancials,
+        },
+        {
+          title: "Future Outlook",
+          content: selectedCompanyResearch.research.futureOutlook,
+        },
+        {
+          title: "Mission & Values",
+          content: selectedCompanyResearch.research.missionValues,
+        },
+        {
+          title: "Other Notable Points",
+          content: selectedCompanyResearch.research.otherNotablePoints,
+        },
+      ]
+    : [];
 
   if (applications === undefined) {
     return (
@@ -602,7 +663,22 @@ export default function ApplicationsPage() {
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0 truncate text-foreground/80">{application.company}</div>
+                      <div className="min-w-0">
+                        <Button
+                          variant="ghost"
+                          className="h-8 max-w-full justify-start px-0 text-left text-foreground/80 hover:bg-transparent hover:text-foreground"
+                          onClick={() =>
+                            setSelectedCompanyResearch({
+                              company: application.company,
+                              research: application.companyResearch,
+                            })
+                          }
+                        >
+                          <span className="truncate underline decoration-dotted underline-offset-4">
+                            {application.company}
+                          </span>
+                        </Button>
+                      </div>
                       <div className="flex min-w-0 justify-center">
                         {application.categories && application.categories.length > 0 ? (
                           <Popover>
@@ -737,6 +813,52 @@ export default function ApplicationsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={selectedCompanyResearch !== null}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setSelectedCompanyResearch(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Company Research</DialogTitle>
+            <DialogDescription>
+              {selectedCompanyResearch?.company ?? "Company"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedCompanyResearch?.research ? (
+            <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+              <div className="rounded-lg border bg-secondary/20 p-3">
+                <div className="text-sm font-medium text-foreground">Context</div>
+                <div className="mt-1 text-sm text-foreground/80">
+                  {selectedCompanyResearch.research.shortDescription}
+                </div>
+              </div>
+
+              {companyResearchSections.map((section) => (
+                <div key={section.title} className="space-y-1">
+                  <div className="text-sm font-semibold text-foreground">{section.title}</div>
+                  <div className="whitespace-pre-wrap text-sm text-foreground/80">{section.content}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border bg-secondary/20 p-4 text-sm text-foreground/70">
+              No company research is available for this application yet.
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedCompanyResearch(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>

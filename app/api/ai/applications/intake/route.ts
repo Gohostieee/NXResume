@@ -3,6 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { DEFAULT_MAX_TOKENS, DEFAULT_MODEL } from "@/constants/llm";
 import { NextResponse } from "next/server";
+import { researchCompany } from "@/lib/ai/company-researcher";
 
 const UNKNOWN_TITLE = "Unknown Title";
 const UNKNOWN_COMPANY = "Unknown Company";
@@ -27,6 +28,18 @@ const extractionSchema = z.object({
   categories: z.array(z.string()),
 });
 
+const companyResearchSchema = z.object({
+  companyName: z.string(),
+  shortDescription: z.string(),
+  companyOverview: z.string(),
+  recentEventsNews: z.string(),
+  strengthsGoodAspects: z.string(),
+  fundingFinancials: z.string(),
+  futureOutlook: z.string(),
+  missionValues: z.string(),
+  otherNotablePoints: z.string(),
+});
+
 const normalizeField = (value: string, fallback: string) => {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : fallback;
@@ -39,6 +52,11 @@ const normalizeCategories = (values: string[]) => {
     .slice(0, MAX_CATEGORIES);
 
   return Array.from(new Set(normalized));
+};
+
+const summarizeJobDescription = (jobDescription: string) => {
+  const compact = jobDescription.replace(/\s+/g, " ").trim();
+  return compact.slice(0, 280);
 };
 
 const serializeError = (error: unknown) => {
@@ -111,12 +129,52 @@ export async function POST(req: Request) {
     const title = normalizeField(result.object.title, UNKNOWN_TITLE);
     const company = normalizeField(result.object.company, UNKNOWN_COMPANY);
     const categories = normalizeCategories(result.object.categories);
+
+    let companyResearch: z.infer<typeof companyResearchSchema> | undefined;
+    let companyResearchWarning: string | undefined;
+
+    if (company !== UNKNOWN_COMPANY) {
+      try {
+        const shortDescription = [
+          title !== UNKNOWN_TITLE ? `Role: ${title}.` : "",
+          categories.length > 0 ? `Categories: ${categories.join(", ")}.` : "",
+          summarizeJobDescription(jobDescription),
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        companyResearch = companyResearchSchema.parse(
+          await researchCompany({
+            companyName: company,
+            shortDescription,
+            apiKey: resolvedApiKey,
+            baseURL: baseURL || undefined,
+          }),
+        );
+      } catch (error) {
+        console.error("[AI][Applications][Intake] Company research failed", {
+          requestId,
+          company,
+          error: serializeError(error),
+        });
+        companyResearchWarning =
+          "Company research could not be completed. You can still import and view the application.";
+      }
+    }
+
     const warning =
       title === UNKNOWN_TITLE || company === UNKNOWN_COMPANY
         ? "Some fields were unclear and were set to fallback values."
         : undefined;
 
-    return NextResponse.json({ title, company, categories, warning });
+    return NextResponse.json({
+      title,
+      company,
+      categories,
+      companyResearch,
+      warning,
+      companyResearchWarning,
+    });
   } catch (error) {
     console.error("[AI][Applications][Intake] Failed to extract job details", {
       requestId,

@@ -19,6 +19,8 @@ type Resume = {
   data: ResumeData;
   visibility: "public" | "private";
   locked: boolean;
+  scope?: "regular" | "application_tailored";
+  applicationId?: string;
   userId: string;
   createdAt: number;
   updatedAt: number;

@@ -13,7 +13,7 @@ export default defineSchema({
       v.literal("email"),
       v.literal("github"),
       v.literal("google"),
-      v.literal("openid")
+      v.literal("openid"),
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -99,6 +99,19 @@ export default defineSchema({
     jobDescription: v.string(),
     title: v.string(),
     company: v.string(),
+    companyResearch: v.optional(
+      v.object({
+        companyName: v.string(),
+        shortDescription: v.string(),
+        companyOverview: v.string(),
+        recentEventsNews: v.string(),
+        strengthsGoodAspects: v.string(),
+        fundingFinancials: v.string(),
+        futureOutlook: v.string(),
+        missionValues: v.string(),
+        otherNotablePoints: v.string(),
+      }),
+    ),
     categories: v.optional(v.array(v.string())),
     tailoredResumeId: v.optional(v.id("resumes")),
     status: v.union(

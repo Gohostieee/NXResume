@@ -138,6 +138,25 @@ export const deleteUser = mutation({
       await ctx.db.delete(application._id);
     }
 
+    // Delete all cover letters and versions
+    const coverLetters = await ctx.db
+      .query("coverLetters")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    for (const coverLetter of coverLetters) {
+      const versions = await ctx.db
+        .query("coverLetterVersions")
+        .withIndex("by_cover_letter", (q) => q.eq("coverLetterId", coverLetter._id))
+        .collect();
+
+      for (const version of versions) {
+        await ctx.db.delete(version._id);
+      }
+
+      await ctx.db.delete(coverLetter._id);
+    }
+
     await ctx.db.delete(user._id);
   },
 });

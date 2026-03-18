@@ -36,7 +36,7 @@ import { Underline } from "@tiptap/extension-underline";
 import type { Editor, EditorContentProps } from "@tiptap/react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
-import { forwardRef, useCallback } from "react";
+import { forwardRef, useCallback, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -513,6 +513,13 @@ export const RichInput = forwardRef<Editor, RichInputProps>(
       parseOptions: { preserveWhitespace: "full" },
       onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
     });
+
+    useEffect(() => {
+      if (!editor) return;
+      const nextContent = content ?? "";
+      if (editor.getHTML() === nextContent) return;
+      editor.commands.setContent(nextContent, false);
+    }, [content, editor]);
 
     if (!editor) {
       return (

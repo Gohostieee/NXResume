@@ -1,5 +1,14 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { buildProfilePatchFromApplication } from "../lib/profile/suggestions";
+import {
+  createInitialResumeHistory,
+  deleteResumeHistory,
+  getResumeSnapshotPatch,
+  resolveDefaultResumeSnapshot,
+  type ResumeVersionSnapshot,
+} from "./resumeHistory";
+import { upsertProfileSuggestion } from "./profileSupport";
 
 const MAX_JOB_DESCRIPTION_LENGTH = 20_000;
 const MAX_CATEGORIES = 10;
@@ -7,11 +16,7 @@ const UNKNOWN_TITLE = "Unknown Title";
 const UNKNOWN_COMPANY = "Unknown Company";
 const NO_SIGNIFICANT_INFORMATION = "No significant information found.";
 
-const extractionState = v.union(
-  v.literal("pending"),
-  v.literal("success"),
-  v.literal("failed"),
-);
+const extractionState = v.union(v.literal("pending"), v.literal("success"), v.literal("failed"));
 
 const applicationStatus = v.union(
   v.literal("not_applied"),
@@ -59,6 +64,19 @@ const normalizeBoundedDescription = (value: string) => {
   return trimmed;
 };
 
+const normalizeImportedDescription = (value: string) => {
+  const trimmed = normalizeText(value);
+  if (!trimmed) {
+    throw new Error("Job description is required");
+  }
+
+  if (trimmed.length <= MAX_JOB_DESCRIPTION_LENGTH) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_JOB_DESCRIPTION_LENGTH - 3).trimEnd()}...`;
+};
+
 const normalizeName = (value: string | undefined, fallback: string) => {
   const trimmed = normalizeText(value ?? "");
   return trimmed || fallback;
@@ -72,6 +90,9 @@ const normalizeCategories = (values: string[] | undefined) => {
 
   return Array.from(new Set(normalized));
 };
+
+const normalizeWarnings = (values: string[] | undefined) =>
+  Array.from(new Set((values ?? []).map((value) => normalizeText(value)).filter(Boolean)));
 
 const normalizeResearchText = (value: string | undefined) =>
   normalizeName(value, NO_SIGNIFICANT_INFORMATION);
@@ -118,7 +139,14 @@ const defaultResumeData = {
       visible: true,
       content: "",
     },
-    awards: { id: "awards", name: "Awards", columns: 1, separateLinks: true, visible: true, items: [] },
+    awards: {
+      id: "awards",
+      name: "Awards",
+      columns: 1,
+      separateLinks: true,
+      visible: true,
+      items: [],
+    },
     certifications: {
       id: "certifications",
       name: "Certifications",
@@ -199,11 +227,18 @@ const defaultResumeData = {
       visible: true,
       items: [],
     },
-    skills: { id: "skills", name: "Skills", columns: 1, separateLinks: true, visible: true, items: [] },
+    skills: {
+      id: "skills",
+      name: "Skills",
+      columns: 1,
+      separateLinks: true,
+      visible: true,
+      items: [],
+    },
     custom: {},
   },
   metadata: {
-    template: "rhyhorn",
+    template: "harvard",
     layout: [
       [
         ["profiles", "summary", "experience", "education", "projects", "volunteer", "references"],
@@ -214,7 +249,12 @@ const defaultResumeData = {
     page: { margin: 18, format: "a4", options: { breakLine: true, pageNumbers: true } },
     theme: { background: "#ffffff", text: "#000000", primary: "#dc2626" },
     typography: {
-      font: { family: "IBM Plex Sans", subset: "latin", variants: ["regular", "italic", "600"], size: 14 },
+      font: {
+        family: "IBM Plex Sans",
+        subset: "latin",
+        variants: ["regular", "italic", "600"],
+        size: 14,
+      },
       lineHeight: 1.5,
       hideIcons: false,
       underlineLinks: true,
@@ -225,11 +265,7 @@ const defaultResumeData = {
 
 const cloneResumeData = <T>(data: T): T => JSON.parse(JSON.stringify(data));
 
-const buildDefaultResumeDataForUser = (user: {
-  name: string;
-  email: string;
-  picture?: string;
-}) => {
+const buildDefaultResumeDataForUser = (user: { name: string; email: string; picture?: string }) => {
   const data = cloneResumeData(defaultResumeData);
   data.basics.name = user.name;
   data.basics.email = user.email;
@@ -272,7 +308,54 @@ const removeResumeAndStats = async (ctx: any, resumeId: any) => {
     await ctx.db.delete(stats._id);
   }
 
+  await deleteResumeHistory(ctx, resumeId);
   await ctx.db.delete(resumeId);
+};
+
+const removeCoverLetterAndVersions = async (ctx: any, coverLetterId: any) => {
+  const versions = await ctx.db
+    .query("coverLetterVersions")
+    .withIndex("by_cover_letter", (q: any) => q.eq("coverLetterId", coverLetterId))
+    .collect();
+
+  for (const version of versions) {
+    await ctx.db.delete(version._id);
+  }
+
+  const queueItems = await ctx.db
+    .query("aiActions")
+    .withIndex("by_target", (q: any) => q.eq("targetType", "cover_letter").eq("targetId", coverLetterId))
+    .collect();
+
+  for (const item of queueItems) {
+    await ctx.db.delete(item._id);
+  }
+
+  await ctx.db.delete(coverLetterId);
+};
+
+const removeCoverLettersForApplication = async (ctx: any, userId: any, applicationId: any) => {
+  const coverLetters = await ctx.db
+    .query("coverLetters")
+    .withIndex("by_user_application", (q: any) =>
+      q.eq("userId", userId).eq("applicationId", applicationId),
+    )
+    .collect();
+
+  for (const coverLetter of coverLetters) {
+    await removeCoverLetterAndVersions(ctx, coverLetter._id);
+  }
+};
+
+const listTailoredResumesForApplication = async (ctx: any, userId: any, applicationId: any) => {
+  const resumes = await ctx.db
+    .query("resumes")
+    .withIndex("by_user_application", (q: any) =>
+      q.eq("userId", userId).eq("applicationId", applicationId),
+    )
+    .collect();
+
+  return resumes.filter((resume: any) => resume.scope === "application_tailored");
 };
 
 export const list = query({
@@ -323,6 +406,7 @@ export const createFromIntake = mutation({
     company: v.string(),
     companyResearch: v.optional(companyResearchValidator),
     categories: v.optional(v.array(v.string())),
+    extractionWarnings: v.optional(v.array(v.string())),
     extractionState,
     extractionError: v.optional(v.string()),
   },
@@ -346,14 +430,118 @@ export const createFromIntake = mutation({
       jobDescription: normalizeBoundedDescription(args.jobDescription),
       title: normalizeName(args.title, UNKNOWN_TITLE),
       company: normalizeName(args.company, UNKNOWN_COMPANY),
+      sourceProvider: "manual",
       companyResearch: normalizeCompanyResearch(args.companyResearch),
       categories: normalizeCategories(args.categories),
+      extractionWarnings: normalizeWarnings(args.extractionWarnings),
       status: "not_applied",
       extractionState: args.extractionState,
       extractionError: extractionError || undefined,
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+export const createPendingFromIntake = mutation({
+  args: {
+    jobDescription: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const now = Date.now();
+
+    return await ctx.db.insert("applications", {
+      userId: user._id,
+      jobDescription: normalizeBoundedDescription(args.jobDescription),
+      title: UNKNOWN_TITLE,
+      company: UNKNOWN_COMPANY,
+      sourceProvider: "manual",
+      companyResearch: undefined,
+      categories: [],
+      extractionWarnings: undefined,
+      status: "not_applied",
+      extractionState: "pending",
+      extractionError: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const createFromJobReveal = mutation({
+  args: {
+    sourceJobId: v.string(),
+    sourceUrl: v.optional(v.string()),
+    sourcePostedAt: v.optional(v.number()),
+    sourceLocation: v.optional(v.string()),
+    sourceSalaryMinUsd: v.optional(v.number()),
+    sourceSalaryMaxUsd: v.optional(v.number()),
+    jobDescription: v.string(),
+    title: v.string(),
+    company: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const existing = await ctx.db
+      .query("applications")
+      .withIndex("by_user_source_job", (q) =>
+        q.eq("userId", user._id).eq("sourceProvider", "theirstack").eq("sourceJobId", args.sourceJobId),
+      )
+      .first();
+
+    if (existing) {
+      return {
+        id: existing._id,
+        created: false,
+      };
+    }
+
+    const now = Date.now();
+    const id = await ctx.db.insert("applications", {
+      userId: user._id,
+      jobDescription: normalizeImportedDescription(args.jobDescription),
+      title: normalizeName(args.title, UNKNOWN_TITLE),
+      company: normalizeName(args.company, UNKNOWN_COMPANY),
+      sourceProvider: "theirstack",
+      sourceJobId: normalizeText(args.sourceJobId),
+      sourceUrl: normalizeText(args.sourceUrl ?? "") || undefined,
+      sourcePostedAt: args.sourcePostedAt,
+      sourceLocation: normalizeText(args.sourceLocation ?? "") || undefined,
+      sourceSalaryMinUsd: args.sourceSalaryMinUsd,
+      sourceSalaryMaxUsd: args.sourceSalaryMaxUsd,
+      companyResearch: undefined,
+      categories: [],
+      extractionWarnings: undefined,
+      status: "not_applied",
+      extractionState: "pending",
+      extractionError: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      id,
+      created: true,
+    };
   },
 });
 
@@ -384,6 +572,12 @@ export const update = mutation({
 
     if (application.userId !== user._id) {
       throw new Error("Unauthorized");
+    }
+
+    const isFieldEdit =
+      args.title !== undefined || args.company !== undefined || args.categories !== undefined;
+    if (application.extractionState === "pending" && isFieldEdit) {
+      throw new Error("Wait for AI extraction to finish before editing these fields.");
     }
 
     const patchData: Record<string, unknown> = {
@@ -433,6 +627,7 @@ export const assignTailoredResume = mutation({
     if (application.userId !== user._id) throw new Error("Unauthorized");
 
     let baseResume: any = null;
+    let baseSnapshot: ResumeVersionSnapshot | null = null;
     if (args.mode === "base") {
       if (!args.baseResumeId) {
         throw new Error("Base resume is required for base mode");
@@ -444,13 +639,8 @@ export const assignTailoredResume = mutation({
       if (baseResume.scope === "application_tailored") {
         throw new Error("Base resume must be a regular resume");
       }
-    }
 
-    if (application.tailoredResumeId) {
-      const existingTailored = await ctx.db.get(application.tailoredResumeId);
-      if (existingTailored && existingTailored.userId === user._id) {
-        await removeResumeAndStats(ctx, application.tailoredResumeId);
-      }
+      baseSnapshot = (await resolveDefaultResumeSnapshot(ctx, baseResume)).snapshot;
     }
 
     const now = Date.now();
@@ -459,23 +649,31 @@ export const assignTailoredResume = mutation({
         ? `${baseResume.title} (${application.company} - Tailored)`
         : `${application.title} @ ${application.company} (Tailored)`;
     const slug = await generateUniqueSlug(ctx, user._id, title);
-    const data =
-      args.mode === "base"
-        ? cloneResumeData(baseResume.data)
-        : buildDefaultResumeDataForUser({
-            name: user.name,
-            email: user.email,
-            picture: user.picture,
-          });
+    const snapshot: ResumeVersionSnapshot =
+      args.mode === "base" && baseSnapshot
+        ? {
+            title,
+            visibility: "private",
+            data: JSON.parse(JSON.stringify(baseSnapshot.data)),
+          }
+        : {
+            title,
+            visibility: "private",
+            data: buildDefaultResumeDataForUser({
+              name: user.name,
+              email: user.email,
+              picture: user.picture,
+            }),
+          };
 
     const tailoredResumeId = await ctx.db.insert("resumes", {
-      title,
+      ...getResumeSnapshotPatch(snapshot),
       slug,
-      data,
-      visibility: "private",
       locked: false,
       scope: "application_tailored",
       applicationId: application._id,
+      defaultBranchId: undefined,
+      activeBranchId: undefined,
       userId: user._id,
       createdAt: now,
       updatedAt: now,
@@ -492,6 +690,14 @@ export const assignTailoredResume = mutation({
     await ctx.db.patch(application._id, {
       tailoredResumeId,
       updatedAt: now,
+    });
+
+    await createInitialResumeHistory(ctx, {
+      resumeId: tailoredResumeId,
+      userId: user._id,
+      snapshot,
+      changeSource: "tailored_seed",
+      createdAt: now,
     });
 
     return tailoredResumeId;
@@ -550,6 +756,104 @@ export const retryExtraction = mutation({
   },
 });
 
+export const markExtractionPending = mutation({
+  args: {
+    id: v.id("applications"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    if (!user) throw new Error("User not found");
+
+    const application = await ctx.db.get(args.id);
+    if (!application) throw new Error("Application not found");
+    if (application.userId !== user._id) throw new Error("Unauthorized");
+
+    await ctx.db.patch(args.id, {
+      extractionState: "pending",
+      extractionError: undefined,
+      extractionWarnings: undefined,
+      updatedAt: Date.now(),
+    });
+
+    return args.id;
+  },
+});
+
+export const completeExtraction = internalMutation({
+  args: {
+    id: v.id("applications"),
+    title: v.string(),
+    company: v.string(),
+    companyResearch: v.optional(companyResearchValidator),
+    categories: v.optional(v.array(v.string())),
+    warnings: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.id);
+    if (!application) {
+      return null;
+    }
+
+    const normalizedTitle = normalizeName(args.title, UNKNOWN_TITLE);
+    const normalizedCompany = normalizeName(args.company, UNKNOWN_COMPANY);
+    const normalizedCategories = normalizeCategories(args.categories);
+
+    await ctx.db.patch(args.id, {
+      title: normalizedTitle,
+      company: normalizedCompany,
+      companyResearch: normalizeCompanyResearch(args.companyResearch),
+      categories: normalizedCategories,
+      extractionWarnings: normalizeWarnings(args.warnings),
+      extractionState: "success",
+      extractionError: undefined,
+      updatedAt: Date.now(),
+    });
+
+    await upsertProfileSuggestion(ctx, {
+      userId: application.userId,
+      sourceType: "application",
+      sourceId: application._id,
+      proposedPatch: buildProfilePatchFromApplication({
+        title: normalizedTitle,
+        company: normalizedCompany,
+        categories: normalizedCategories,
+        jobDescription: application.jobDescription,
+      }),
+    });
+
+    return args.id;
+  },
+});
+
+export const failExtraction = internalMutation({
+  args: {
+    id: v.id("applications"),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const application = await ctx.db.get(args.id);
+    if (!application) {
+      return null;
+    }
+
+    await ctx.db.patch(args.id, {
+      extractionState: "failed",
+      extractionError: normalizeText(args.message),
+      extractionWarnings: undefined,
+      updatedAt: Date.now(),
+    });
+
+    return args.id;
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("applications") },
   handler: async (ctx, { id }) => {
@@ -573,11 +877,23 @@ export const remove = mutation({
       throw new Error("Unauthorized");
     }
 
-    if (application.tailoredResumeId) {
-      const tailoredResume = await ctx.db.get(application.tailoredResumeId);
-      if (tailoredResume && tailoredResume.userId === user._id) {
-        await removeResumeAndStats(ctx, application.tailoredResumeId);
-      }
+    await removeCoverLettersForApplication(ctx, user._id, application._id);
+
+    const tailoredResumes = await listTailoredResumesForApplication(ctx, user._id, application._id);
+
+    for (const tailoredResume of tailoredResumes) {
+      await removeResumeAndStats(ctx, tailoredResume._id);
+    }
+
+    const queueItems = await ctx.db
+      .query("aiActions")
+      .withIndex("by_target", (q: any) =>
+        q.eq("targetType", "application").eq("targetId", application._id),
+      )
+      .collect();
+
+    for (const item of queueItems) {
+      await ctx.db.delete(item._id);
     }
 
     await ctx.db.delete(id);

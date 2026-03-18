@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import {
   Briefcase,
@@ -11,14 +12,29 @@ import {
   PencilSimple,
   Plus,
   Sparkle,
+  SpinnerGap,
   Trash,
   Warning,
 } from "@phosphor-icons/react";
 import { api } from "@/convex/_generated/api";
+import type { CompanyResearchDetails } from "@/lib/ai/application-intake-types";
 import {
-  extractApplicationFromDescription,
-  type CompanyResearchDetails,
-} from "@/lib/ai/application-intake-client";
+  COVER_LETTER_FOCUS_MODULES,
+  COVER_LETTER_MODULE_LABELS,
+  COVER_LETTER_PRESET_LABELS,
+  COVER_LETTER_PRESETS,
+  getDefaultModulesForPreset,
+  type CoverLetterFocusModule,
+  type CoverLetterPreset,
+} from "@/lib/ai/cover-letter-types";
+import {
+  buildApplicationProfileHints,
+  buildCoverLetterDefaultInstruction,
+  buildProfileContextSummary,
+  chooseCoverLetterFocusModules,
+  chooseCoverLetterPreset,
+  scoreResumeForApplication,
+} from "@/lib/profile/ui-assist";
 import { useOpenAiStore } from "@/stores/openai";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -51,8 +67,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-const UNKNOWN_TITLE = "Unknown Title";
-const UNKNOWN_COMPANY = "Unknown Company";
 const MAX_JOB_DESCRIPTION_LENGTH = 20_000;
 const MIN_JOB_DESCRIPTION_LENGTH = 20;
 const CATEGORY_PREVIEW_COUNT = 2;
@@ -96,12 +110,7 @@ const getStatusMeta = (status: string) =>
   APPLICATION_STATUS_OPTIONS.find((option) => option.value === status) ??
   APPLICATION_STATUS_OPTIONS[0];
 
-const LOADING_STAGES = [
-  "Analyzing job description...",
-  "Extracting title, company, and categories...",
-  "Researching company...",
-  "Saving application...",
-];
+const DEFAULT_COVER_LETTER_PRESET: CoverLetterPreset = "balanced";
 
 type Notice = {
   variant: "success" | "warning" | "error" | "info";
@@ -110,18 +119,33 @@ type Notice = {
 };
 
 export default function ApplicationsPage() {
+  const searchParams = useSearchParams();
   const applications = useQuery(api.applications.list);
   const resumes = useQuery(api.resumes.list);
-  const createFromIntake = useMutation(api.applications.createFromIntake);
+  const allResumes = useQuery(api.resumes.listAll);
+  const profileContext = useQuery(api.careerProfiles.getContext);
+  const coverLetters = useQuery(
+    api.coverLetters.listByApplicationIds,
+    applications
+      ? {
+          applicationIds: applications.map((application) => application._id as any),
+        }
+      : "skip",
+  );
+  const enqueueAiAction = useMutation(api.aiQueue.enqueue);
+  const createPendingFromIntake = useMutation(api.applications.createPendingFromIntake);
+  const markExtractionPending = useMutation(api.applications.markExtractionPending);
   const updateApplication = useMutation(api.applications.update);
   const assignTailoredResume = useMutation(api.applications.assignTailoredResume);
   const retryExtraction = useMutation(api.applications.retryExtraction);
   const removeApplication = useMutation(api.applications.remove);
-  const { apiKey, model, maxTokens, baseURL } = useOpenAiStore();
+  const createPendingCoverLetter = useMutation(api.coverLetters.createPending);
+  const removeCoverLetter = useMutation(api.coverLetters.remove);
+  const { model, maxTokens } = useOpenAiStore();
+  const highlightedApplicationId = searchParams.get("applicationId");
 
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [importStep, setImportStep] = useState(0);
   const [jobDescription, setJobDescription] = useState("");
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -142,27 +166,31 @@ export default function ApplicationsPage() {
     company: string;
     research?: CompanyResearchDetails;
   } | null>(null);
-
-  useEffect(() => {
-    if (!isImporting) {
-      setImportStep(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setImportStep((current) =>
-        current < LOADING_STAGES.length - 1 ? current + 1 : current,
-      );
-    }, 900);
-
-    return () => clearInterval(interval);
-  }, [isImporting]);
+  const [isCoverLetterDialogOpen, setIsCoverLetterDialogOpen] = useState(false);
+  const [coverLetterApplicationId, setCoverLetterApplicationId] = useState<string | null>(null);
+  const [coverLetterResumeId, setCoverLetterResumeId] = useState<string>("");
+  const [coverLetterPreset, setCoverLetterPreset] = useState<CoverLetterPreset>(
+    DEFAULT_COVER_LETTER_PRESET,
+  );
+  const [coverLetterFocusModules, setCoverLetterFocusModules] = useState<CoverLetterFocusModule[]>(
+    getDefaultModulesForPreset(DEFAULT_COVER_LETTER_PRESET),
+  );
+  const [coverLetterCustomInstruction, setCoverLetterCustomInstruction] = useState("");
+  const [isCoverLetterAdvancedOpen, setIsCoverLetterAdvancedOpen] = useState(false);
+  const [isGeneratingCoverLetter, setIsGeneratingCoverLetter] = useState(false);
 
   useEffect(() => {
     if (!resumes || resumes.length === 0) return;
     if (selectedBaseResumeId) return;
     setSelectedBaseResumeId(resumes[0]._id);
   }, [resumes, selectedBaseResumeId]);
+
+  useEffect(() => {
+    if (!isCoverLetterDialogOpen) return;
+    if (coverLetterFocusModules.length === 0) {
+      setCoverLetterFocusModules(getDefaultModulesForPreset(coverLetterPreset));
+    }
+  }, [coverLetterPreset, isCoverLetterDialogOpen]);
 
   const descriptionValidationMessage = useMemo(() => {
     const trimmed = jobDescription.trim();
@@ -183,14 +211,101 @@ export default function ApplicationsPage() {
     !isAssigningResume &&
     Boolean(selectedApplicationId) &&
     (resumeImportMode === "new" || Boolean(selectedBaseResumeId));
+  const coverLettersByApplication = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+    for (const coverLetter of coverLetters ?? []) {
+      const existing = grouped.get(coverLetter.applicationId) ?? [];
+      existing.push(coverLetter);
+      grouped.set(coverLetter.applicationId, existing);
+    }
+    return grouped;
+  }, [coverLetters]);
+  const tailoredResumesByApplication = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+    for (const resume of allResumes ?? []) {
+      if (resume.scope !== "application_tailored" || !resume.applicationId) continue;
+      const existing = grouped.get(resume.applicationId) ?? [];
+      existing.push(resume);
+      grouped.set(resume.applicationId, existing);
+    }
+    return grouped;
+  }, [allResumes]);
+  const selectedCoverLetterApplication = useMemo(
+    () => applications?.find((application) => application._id === coverLetterApplicationId) ?? null,
+    [applications, coverLetterApplicationId],
+  );
+  const selectedResumeApplication = useMemo(
+    () => applications?.find((application) => application._id === selectedApplicationId) ?? null,
+    [applications, selectedApplicationId],
+  );
+  const selectedApplicationTailoredResumes = useMemo(
+    () =>
+      selectedCoverLetterApplication
+        ? [...(tailoredResumesByApplication.get(selectedCoverLetterApplication._id) ?? [])].sort(
+            (a, b) => b.updatedAt - a.updatedAt,
+          )
+        : [],
+    [selectedCoverLetterApplication, tailoredResumesByApplication],
+  );
+  const availableCoverLetterResumes = useMemo(
+    () => [...selectedApplicationTailoredResumes, ...(resumes ?? [])],
+    [selectedApplicationTailoredResumes, resumes],
+  );
+  const selectedCoverLetterResume = useMemo(
+    () => allResumes?.find((resume) => resume._id === coverLetterResumeId) ?? null,
+    [allResumes, coverLetterResumeId],
+  );
+  const canGenerateCoverLetter =
+    !isGeneratingCoverLetter &&
+    Boolean(selectedCoverLetterApplication) &&
+    Boolean(selectedCoverLetterResume) &&
+    coverLetterFocusModules.length > 0;
+  const isCoverLetterDialogBusy = isGeneratingCoverLetter;
+  const isUsingTailoredResume = Boolean(
+    selectedApplicationTailoredResumes.some((resume) => resume._id === coverLetterResumeId) &&
+    selectedCoverLetterResume,
+  );
+
+  useEffect(() => {
+    if (!isCoverLetterDialogOpen) return;
+    if (coverLetterResumeId) return;
+    if (availableCoverLetterResumes.length === 0) return;
+
+    setCoverLetterResumeId(availableCoverLetterResumes[0]._id);
+  }, [availableCoverLetterResumes, coverLetterResumeId, isCoverLetterDialogOpen]);
+
+  useEffect(() => {
+    if (!highlightedApplicationId) return;
+    if (!applications?.some((application) => application._id === highlightedApplicationId)) return;
+
+    const element = document.getElementById(`application-row-${highlightedApplicationId}`);
+    element?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [applications, highlightedApplicationId]);
+
+  const pickRecommendedBaseResumeId = (applicationId: string) => {
+    const application = applications?.find((item) => item._id === applicationId);
+    if (!application || !resumes || resumes.length === 0) {
+      return resumes?.[0]?._id ?? "";
+    }
+
+    return (
+      [...resumes]
+      .sort((left, right) => {
+        const rightScore = scoreResumeForApplication(right, application, profileContext);
+        const leftScore = scoreResumeForApplication(left, application, profileContext);
+        if (rightScore !== leftScore) {
+          return rightScore - leftScore;
+        }
+        return right.updatedAt - left.updatedAt;
+      })[0]?._id ?? ""
+    );
+  };
 
   const openResumeDialog = (applicationId: string) => {
     setSelectedApplicationId(applicationId);
     if (hasRegularResumes) {
       setResumeImportMode("base");
-      if (!selectedBaseResumeId && resumes && resumes.length > 0) {
-        setSelectedBaseResumeId(resumes[0]._id);
-      }
+      setSelectedBaseResumeId(pickRecommendedBaseResumeId(applicationId));
     } else {
       setResumeImportMode("new");
       setSelectedBaseResumeId("");
@@ -198,86 +313,93 @@ export default function ApplicationsPage() {
     setIsResumeDialogOpen(true);
   };
 
+  const openCoverLetterDialog = (application: {
+    _id: string;
+    tailoredResumeId?: string;
+    title?: string;
+    company?: string;
+    categories?: string[];
+    jobDescription?: string;
+    companyResearch?: CompanyResearchDetails;
+  }) => {
+    const tailoredResumes = [...(tailoredResumesByApplication.get(application._id) ?? [])].sort(
+      (a, b) => b.updatedAt - a.updatedAt,
+    );
+    const hasTailoredResume = Boolean(
+      application.tailoredResumeId &&
+      tailoredResumes.some((resume) => resume._id === application.tailoredResumeId),
+    );
+    const defaultResumeId =
+      (hasTailoredResume ? application.tailoredResumeId : undefined) ||
+      tailoredResumes[0]?._id ||
+      (resumes && resumes.length > 0 ? resumes[0]._id : "");
+
+    setCoverLetterApplicationId(application._id);
+    setCoverLetterResumeId(defaultResumeId);
+    const nextPreset = chooseCoverLetterPreset(profileContext, application);
+    setCoverLetterPreset(nextPreset);
+    setCoverLetterFocusModules(chooseCoverLetterFocusModules(profileContext, application));
+    setCoverLetterCustomInstruction(buildCoverLetterDefaultInstruction(profileContext, application));
+    setIsCoverLetterAdvancedOpen(false);
+    setIsCoverLetterDialogOpen(true);
+  };
+
+  const toggleCoverLetterFocusModule = (module: CoverLetterFocusModule) => {
+    setCoverLetterFocusModules((current) => {
+      if (current.includes(module)) {
+        if (current.length === 1) return current;
+        return current.filter((item) => item !== module);
+      }
+
+      return [...current, module];
+    });
+  };
+
+  const openResumeDialogFromCoverLetter = () => {
+    if (!selectedCoverLetterApplication) return;
+
+    setIsCoverLetterDialogOpen(false);
+    openResumeDialog(selectedCoverLetterApplication._id);
+  };
+
   const handleImport = async () => {
     if (!canImport) return;
 
     setIsImporting(true);
     setNotice(null);
-
     const trimmedDescription = jobDescription.trim();
-    let extractedTitle = UNKNOWN_TITLE;
-    let extractedCompany = UNKNOWN_COMPANY;
-    let extractedCategories: string[] = [];
-    let extractedCompanyResearch: CompanyResearchDetails | undefined;
-    let extractionState: "success" | "failed" = "success";
-    let extractionError: string | undefined;
-    let extractionWarning: string | undefined;
-    let companyResearchWarning: string | undefined;
 
     try {
-      const result = await extractApplicationFromDescription({
+      const applicationId = await createPendingFromIntake({
         jobDescription: trimmedDescription,
-        apiKey,
-        model,
-        maxTokens,
-        baseURL,
       });
 
-      extractedTitle = result.title?.trim() || UNKNOWN_TITLE;
-      extractedCompany = result.company?.trim() || UNKNOWN_COMPANY;
-      extractedCategories = result.categories ?? [];
-      extractedCompanyResearch = result.companyResearch;
-      extractionWarning = result.warning;
-      companyResearchWarning = result.companyResearchWarning;
-    } catch (error) {
-      extractionState = "failed";
-      extractionError =
-        error instanceof Error ? error.message : "Failed to extract job details";
-    }
-
-    try {
-      await createFromIntake({
-        jobDescription: trimmedDescription,
-        title: extractedTitle,
-        company: extractedCompany,
-        companyResearch: extractedCompanyResearch,
-        categories: extractedCategories,
-        extractionState,
-        extractionError,
-      });
+      try {
+        await enqueueAiAction({
+          request: {
+            kind: "application.extract",
+            applicationId: applicationId as any,
+            model: model ?? undefined,
+            maxTokens: maxTokens ?? undefined,
+          },
+        });
+      } catch (error) {
+        await removeApplication({ id: applicationId as any }).catch(() => null);
+        throw error;
+      }
 
       setJobDescription("");
       setIsImportDialogOpen(false);
-
-      if (extractionState === "failed") {
-        setNotice({
-          variant: "warning",
-          title: "Imported with fallback values",
-          description:
-            "We saved the application, but AI extraction failed. You can retry extraction or edit fields manually.",
-        });
-      } else {
-        const warnings = [extractionWarning, companyResearchWarning].filter(Boolean);
-
-        if (warnings.length > 0) {
-          setNotice({
-            variant: "warning",
-            title: "Imported with partial extraction",
-            description: warnings.join(" "),
-          });
-        } else {
-          setNotice({
-            variant: "success",
-            title: "Application imported",
-            description: "Job title, company, categories, and company research were saved.",
-          });
-        }
-      }
+      setNotice({
+        variant: "success",
+        title: "Application imported",
+        description: "The application was created and AI extraction is running in the background.",
+      });
     } catch (error) {
       setNotice({
         variant: "error",
         title: "Import failed",
-        description: error instanceof Error ? error.message : "Could not save application.",
+        description: error instanceof Error ? error.message : "Could not queue AI extraction.",
       });
     } finally {
       setIsImporting(false);
@@ -311,15 +433,14 @@ export default function ApplicationsPage() {
       await assignTailoredResume({
         applicationId: selectedApplicationId as any,
         mode: resumeImportMode,
-        baseResumeId:
-          resumeImportMode === "base" ? (selectedBaseResumeId as any) : undefined,
+        baseResumeId: resumeImportMode === "base" ? (selectedBaseResumeId as any) : undefined,
       });
 
       setIsResumeDialogOpen(false);
       setNotice({
         variant: "success",
-        title: "Resume assigned",
-        description: "A tailored resume was linked to this job application.",
+        title: "Tailored resume created",
+        description: "A tailored resume was created for this job application.",
       });
     } catch (error) {
       setNotice({
@@ -335,11 +456,7 @@ export default function ApplicationsPage() {
     }
   };
 
-  const openEditDialog = (application: {
-    _id: string;
-    title: string;
-    company: string;
-  }) => {
+  const openEditDialog = (application: { _id: string; title: string; company: string }) => {
     setEditingId(application._id);
     setEditingTitle(application.title);
     setEditingCompany(application.company);
@@ -386,44 +503,21 @@ export default function ApplicationsPage() {
     setNotice(null);
 
     try {
-      const result = await extractApplicationFromDescription({
-        jobDescription: application.jobDescription,
-        apiKey,
-        model,
-        maxTokens,
-        baseURL,
-      });
-
-      await retryExtraction({
+      await markExtractionPending({
         id: application._id as any,
-        title: result.title || UNKNOWN_TITLE,
-        company: result.company || UNKNOWN_COMPANY,
-        companyResearch: result.companyResearch,
-        categories: result.categories ?? [],
-        extractionState: "success",
-        extractionError: undefined,
       });
-
-      const warnings = [result.warning, result.companyResearchWarning].filter(Boolean);
-
-      if (warnings.length > 0) {
-        setNotice({
-          variant: "warning",
-          title: "Extraction retried with partial data",
-          description: warnings.join(" "),
-        });
-      } else {
-        setNotice({
-          variant: "success",
-          title: "Extraction retried",
-          description: "AI extraction completed and fields were updated.",
-        });
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to retry extraction.";
 
       try {
+        await enqueueAiAction({
+          request: {
+            kind: "application.extract",
+            applicationId: application._id as any,
+            model: model ?? undefined,
+            maxTokens: maxTokens ?? undefined,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to retry extraction.";
         await retryExtraction({
           id: application._id as any,
           title: application.title,
@@ -431,16 +525,21 @@ export default function ApplicationsPage() {
           categories: application.categories ?? [],
           extractionState: "failed",
           extractionError: message,
-        });
-      } catch {
-        // Best-effort failure state update only.
+        }).catch(() => null);
+        throw error;
       }
 
       setNotice({
-        variant: "warning",
+        variant: "success",
+        title: "Extraction queued",
+        description: "AI extraction is running again for this application.",
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
         title: "Retry failed",
         description:
-          "AI extraction still failed. The original values were kept. You can edit fields manually.",
+          error instanceof Error ? error.message : "Could not queue AI extraction retry.",
       });
     } finally {
       setRetryingId(null);
@@ -467,6 +566,55 @@ export default function ApplicationsPage() {
       });
     } finally {
       setChangingStatusId(null);
+    }
+  };
+
+  const handleGenerateCoverLetter = async () => {
+    if (!canGenerateCoverLetter || !selectedCoverLetterApplication || !selectedCoverLetterResume) {
+      return;
+    }
+
+    setIsGeneratingCoverLetter(true);
+    try {
+      const coverLetterId = await createPendingCoverLetter({
+        applicationId: selectedCoverLetterApplication._id as any,
+        resumeId: selectedCoverLetterResume._id as any,
+        preset: coverLetterPreset,
+        focusModules: coverLetterFocusModules,
+        customInstruction: coverLetterCustomInstruction.trim() || undefined,
+      });
+
+      try {
+        await enqueueAiAction({
+          request: {
+            kind: "cover_letter.generate",
+            coverLetterId: coverLetterId as any,
+            mode: "create",
+            model: model ?? undefined,
+            maxTokens: maxTokens ?? undefined,
+          },
+        });
+      } catch (error) {
+        await removeCoverLetter({ id: coverLetterId as any }).catch(() => null);
+        throw error;
+      }
+
+      setIsCoverLetterDialogOpen(false);
+      setNotice({
+        variant: "success",
+        title: "Cover letter queued",
+        description:
+          "The draft is generating now. It will stay in this application's cover letter list until it's ready.",
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        title: "Cover letter generation failed",
+        description:
+          error instanceof Error ? error.message : "Could not generate the cover letter right now.",
+      });
+    } finally {
+      setIsGeneratingCoverLetter(false);
     }
   };
 
@@ -521,14 +669,28 @@ export default function ApplicationsPage() {
           </p>
         </div>
 
-        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <Dialog
+          open={isImportDialogOpen}
+          onOpenChange={(isOpen) => {
+            if (isImporting) return;
+            setIsImportDialogOpen(isOpen);
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
               Import Job
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
+          <DialogContent
+            className="sm:max-w-2xl"
+            onEscapeKeyDown={(event) => {
+              if (isImporting) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (isImporting) event.preventDefault();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Import Job Description</DialogTitle>
               <DialogDescription>
@@ -558,42 +720,6 @@ export default function ApplicationsPage() {
                   )}
                 </div>
               </div>
-
-              {isImporting && (
-                <div className="rounded-lg border bg-secondary/20 p-4">
-                  <div className="mb-3 flex items-center gap-2 font-medium">
-                    <Sparkle className="h-4 w-4 animate-pulse text-primary" />
-                    Processing import...
-                  </div>
-                  <div className="space-y-2">
-                    {LOADING_STAGES.map((stage, index) => {
-                      const isDone = index < importStep;
-                      const isCurrent = index === importStep;
-
-                      return (
-                        <div key={stage} className="flex items-center gap-2 text-sm">
-                          <div
-                            className={`h-2 w-2 rounded-full ${
-                              isDone
-                                ? "bg-success"
-                                : isCurrent
-                                  ? "bg-primary animate-pulse"
-                                  : "bg-foreground/20"
-                            }`}
-                          />
-                          <span
-                            className={
-                              isDone || isCurrent ? "text-foreground" : "text-foreground/60"
-                            }
-                          >
-                            {stage}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
 
             <DialogFooter>
@@ -605,7 +731,7 @@ export default function ApplicationsPage() {
                 Cancel
               </Button>
               <Button onClick={handleImport} disabled={!canImport}>
-                {isImporting ? "Importing..." : "Import"}
+                {isImporting ? "Queueing..." : "Import"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -637,13 +763,14 @@ export default function ApplicationsPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <div className="min-w-[1100px]">
-                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_120px_56px] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
+              <div className="min-w-[1280px]">
+                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_180px_120px_56px] gap-4 border-b pb-3 text-xs font-semibold uppercase tracking-wide text-foreground/60">
                   <div>Title</div>
                   <div>Company</div>
                   <div className="text-center">Categories</div>
                   <div className="text-center">Status</div>
                   <div className="text-center">Resume</div>
+                  <div className="text-center">Cover Letter</div>
                   <div className="text-center">Imported</div>
                   <div className="text-right">Actions</div>
                 </div>
@@ -652,16 +779,55 @@ export default function ApplicationsPage() {
                   {applications.map((application) => (
                     <div
                       key={application._id}
-                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_120px_56px] items-center gap-4 py-4"
+                      id={`application-row-${application._id}`}
+                      className={`grid grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_200px_160px_160px_180px_120px_56px] items-center gap-4 rounded-xl px-2 py-4 transition-colors ${
+                        application._id === highlightedApplicationId
+                          ? "bg-info/10 ring-1 ring-info/30"
+                          : ""
+                      }`}
                     >
                       <div className="min-w-0">
                         <div className="truncate font-medium">{application.title}</div>
+                        {application.extractionState === "pending" && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-sky-700">
+                            <SpinnerGap className="h-3 w-3 animate-spin" />
+                            AI extraction in progress
+                          </div>
+                        )}
                         {application.extractionState === "failed" && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-warning">
                             <Warning className="h-3 w-3" />
                             Extraction failed
                           </div>
                         )}
+                        {application.extractionState === "success" &&
+                          (application.extractionWarnings?.length ?? 0) > 0 && (
+                            <div className="mt-1 flex items-center gap-1 text-xs text-warning">
+                              <Warning className="h-3 w-3" />
+                              Imported with warnings
+                            </div>
+                          )}
+                        {profileContext && (() => {
+                          const hints = buildApplicationProfileHints(application, profileContext);
+                          if (hints.suggestions.length === 0 && hints.risks.length === 0) {
+                            return null;
+                          }
+
+                          return (
+                            <div className="mt-2 space-y-1 text-xs text-foreground/65">
+                              {hints.suggestions.length > 0 && (
+                                <div>
+                                  Profile suggests: {hints.suggestions.slice(0, 2).join(" | ")}
+                                </div>
+                              )}
+                              {hints.risks.length > 0 && (
+                                <div className="text-amber-700">
+                                  {hints.risks.slice(0, 1).join(" ")}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="min-w-0">
                         <Button
@@ -742,26 +908,118 @@ export default function ApplicationsPage() {
                         </Select>
                       </div>
                       <div className="flex min-w-0 justify-center">
-                        {application.tailoredResumeId ? (
-                          <Link
-                            href={`/builder/${application.tailoredResumeId}?from=applications&applicationId=${application._id}`}
-                          >
-                            <Button variant="outline" size="sm" className="h-8 w-[140px]">
-                              <FileText className="mr-2 h-4 w-4" />
-                              View Resume
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-[170px] justify-between"
+                            >
+                              Tailored Resumes
+                              <CaretDown className="ml-2 h-3 w-3" />
                             </Button>
-                          </Link>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 w-[140px]"
-                            onClick={() => openResumeDialog(application._id)}
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Import Resume
-                          </Button>
-                        )}
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="center" className="w-72">
+                            <DropdownMenuItem onClick={() => openResumeDialog(application._id)}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Tailored Resume
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {[...(tailoredResumesByApplication.get(application._id) ?? [])]
+                              .length === 0 ? (
+                              <DropdownMenuItem disabled>No tailored resumes yet</DropdownMenuItem>
+                            ) : (
+                              [...(tailoredResumesByApplication.get(application._id) ?? [])]
+                                .sort((a, b) => b.updatedAt - a.updatedAt)
+                                .map((resume) => (
+                                  <DropdownMenuItem asChild key={resume._id}>
+                                    <Link
+                                      href={`/builder/${resume._id}?from=applications&applicationId=${application._id}`}
+                                    >
+                                      <div className="flex w-full items-center justify-between gap-2">
+                                        <span className="truncate">{resume.title}</span>
+                                        <span className="text-xs text-foreground/60">
+                                          {resume._id === application.tailoredResumeId
+                                            ? "Current"
+                                            : new Date(resume.updatedAt).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </Link>
+                                  </DropdownMenuItem>
+                                ))
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div className="flex min-w-0 justify-center">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-[170px] justify-between"
+                            >
+                              Cover Letters
+                              <CaretDown className="ml-2 h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="center" className="w-72">
+                            <DropdownMenuItem onClick={() => openCoverLetterDialog(application)}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Cover Letter
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {[...(coverLettersByApplication.get(application._id) ?? [])].length ===
+                            0 ? (
+                              <DropdownMenuItem disabled>No cover letters yet</DropdownMenuItem>
+                            ) : (
+                              [...(coverLettersByApplication.get(application._id) ?? [])]
+                                .sort((a, b) => b.updatedAt - a.updatedAt)
+                                .map((coverLetter) => {
+                                  const isGenerating =
+                                    coverLetter.generationState === "queued" ||
+                                    coverLetter.generationState === "running";
+
+                                  if (isGenerating) {
+                                    return (
+                                      <DropdownMenuItem
+                                        key={coverLetter._id}
+                                        disabled
+                                        className="cursor-default opacity-70"
+                                      >
+                                        <div className="flex w-full items-center justify-between gap-2">
+                                          <span className="truncate text-foreground/70">
+                                            {coverLetter.title}
+                                          </span>
+                                          <span className="inline-flex items-center gap-1 text-xs text-foreground/50">
+                                            <SpinnerGap className="h-3 w-3 animate-spin" />
+                                            Generating
+                                          </span>
+                                        </div>
+                                      </DropdownMenuItem>
+                                    );
+                                  }
+
+                                  return (
+                                    <DropdownMenuItem asChild key={coverLetter._id}>
+                                      <Link href={`/dashboard/cover-letters/${coverLetter._id}`}>
+                                        <div className="flex w-full items-center justify-between gap-2">
+                                          <span className="truncate">{coverLetter.title}</span>
+                                          <span className="text-xs text-foreground/60">
+                                            {coverLetter.generationState === "failed"
+                                              ? "Failed"
+                                              : coverLetter.visibility === "public"
+                                                ? "Public"
+                                                : "Private"}
+                                          </span>
+                                        </div>
+                                      </Link>
+                                    </DropdownMenuItem>
+                                  );
+                                })
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       <div className="text-center text-sm text-foreground/70">
                         {new Date(application.createdAt).toLocaleDateString()}
@@ -781,18 +1039,23 @@ export default function ApplicationsPage() {
                                   onClick={() => handleRetryExtraction(application as any)}
                                 >
                                   <Sparkle className="mr-2 h-4 w-4" />
-                                  {retryingId === application._id ? "Retrying..." : "Retry Extraction"}
+                                  {retryingId === application._id
+                                    ? "Retrying..."
+                                    : "Retry Extraction"}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                               </>
                             )}
-                            <DropdownMenuItem onClick={() => openEditDialog(application as any)}>
+                            <DropdownMenuItem
+                              disabled={application.extractionState === "pending"}
+                              onClick={() => openEditDialog(application as any)}
+                            >
                               <PencilSimple className="mr-2 h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openResumeDialog(application._id)}>
                               <FileText className="mr-2 h-4 w-4" />
-                              {application.tailoredResumeId ? "Replace Resume" : "Import Resume"}
+                              Create Tailored Resume
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -825,9 +1088,7 @@ export default function ApplicationsPage() {
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Company Research</DialogTitle>
-            <DialogDescription>
-              {selectedCompanyResearch?.company ?? "Company"}
-            </DialogDescription>
+            <DialogDescription>{selectedCompanyResearch?.company ?? "Company"}</DialogDescription>
           </DialogHeader>
 
           {selectedCompanyResearch?.research ? (
@@ -842,7 +1103,9 @@ export default function ApplicationsPage() {
               {companyResearchSections.map((section) => (
                 <div key={section.title} className="space-y-1">
                   <div className="text-sm font-semibold text-foreground">{section.title}</div>
-                  <div className="whitespace-pre-wrap text-sm text-foreground/80">{section.content}</div>
+                  <div className="whitespace-pre-wrap text-sm text-foreground/80">
+                    {section.content}
+                  </div>
                 </div>
               ))}
             </div>
@@ -904,13 +1167,26 @@ export default function ApplicationsPage() {
       <Dialog open={isResumeDialogOpen} onOpenChange={setIsResumeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import Tailored Resume</DialogTitle>
+            <DialogTitle>Create Tailored Resume</DialogTitle>
             <DialogDescription>
               Choose an existing resume as the base, or create a new resume for this application.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
+            {profileContext && selectedResumeApplication && (
+              <div className="rounded-md border bg-secondary/20 px-3 py-2 text-sm text-foreground/70">
+                <div className="font-medium text-foreground">Profile-guided recommendation</div>
+                <div className="mt-1">
+                  {buildProfileContextSummary(profileContext)}
+                </div>
+                {resumeImportMode === "base" && selectedBaseResumeId && (
+                  <div className="mt-1 text-xs text-foreground/60">
+                    Recommended base resume selected from your saved profile and this role.
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
@@ -968,7 +1244,171 @@ export default function ApplicationsPage() {
               Cancel
             </Button>
             <Button onClick={handleAssignResume} disabled={!canAssignResume}>
-              {isAssigningResume ? "Assigning..." : "Import Resume"}
+              {isAssigningResume ? "Creating..." : "Create Resume"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isCoverLetterDialogOpen}
+        onOpenChange={(isOpen) => {
+          if (isCoverLetterDialogBusy) return;
+          setIsCoverLetterDialogOpen(isOpen);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-2xl"
+          onEscapeKeyDown={(event) => {
+            if (isCoverLetterDialogBusy) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (isCoverLetterDialogBusy) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Create Cover Letter</DialogTitle>
+            <DialogDescription>
+              Generate a modular cover letter using this application and your resume context.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+              {profileContext && (
+                <div className="rounded-md border bg-secondary/20 px-3 py-2 text-sm text-foreground/70">
+                  <div className="font-medium text-foreground">Using profile context</div>
+                  <div className="mt-1">{buildProfileContextSummary(profileContext)}</div>
+                  {coverLetterCustomInstruction && (
+                    <div className="mt-2 text-xs text-foreground/60">
+                      Default direction was prefilled from your profile and this application.
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="grid gap-2">
+                <Label htmlFor="cover-letter-preset">Preset</Label>
+                <Select
+                  value={coverLetterPreset}
+                  onValueChange={(value) => setCoverLetterPreset(value as CoverLetterPreset)}
+                  disabled={isGeneratingCoverLetter}
+                >
+                  <SelectTrigger id="cover-letter-preset">
+                    <SelectValue placeholder="Select a preset" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COVER_LETTER_PRESETS.map((preset) => (
+                      <SelectItem key={preset} value={preset}>
+                        {COVER_LETTER_PRESET_LABELS[preset]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Resume Source</Label>
+                {availableCoverLetterResumes.length > 0 ? (
+                  <div className="grid gap-2">
+                    <Select
+                      value={coverLetterResumeId}
+                      onValueChange={setCoverLetterResumeId}
+                      disabled={isGeneratingCoverLetter}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a resume" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedApplicationTailoredResumes.map((resume) => (
+                          <SelectItem key={resume._id} value={resume._id}>
+                            {resume.title} (Tailored)
+                          </SelectItem>
+                        ))}
+                        {(resumes ?? []).map((resume) => (
+                          <SelectItem key={resume._id} value={resume._id}>
+                            {resume.title} (Base)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {isUsingTailoredResume && (
+                      <div className="rounded-md border bg-secondary/20 px-3 py-2 text-sm">
+                        Using a tailored resume linked to this application.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+                    <p>No resumes available. Import or create a resume before generating.</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={openResumeDialogFromCoverLetter}
+                    >
+                      Import Resume
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="cover-letter-custom">Custom Direction (Optional)</Label>
+                <Textarea
+                  id="cover-letter-custom"
+                  value={coverLetterCustomInstruction}
+                  disabled={isGeneratingCoverLetter}
+                  placeholder="Add any specific angle or idea you want emphasized."
+                  onChange={(event) => setCoverLetterCustomInstruction(event.target.value)}
+                />
+              </div>
+
+              <div className="rounded-md border">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium"
+                  onClick={() => setIsCoverLetterAdvancedOpen((current) => !current)}
+                  disabled={isGeneratingCoverLetter}
+                >
+                  Advanced Focus Modules
+                  <CaretDown
+                    className={`h-4 w-4 transition-transform ${
+                      isCoverLetterAdvancedOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {isCoverLetterAdvancedOpen && (
+                  <div className="grid gap-2 border-t p-3">
+                    {COVER_LETTER_FOCUS_MODULES.map((module) => {
+                      const enabled = coverLetterFocusModules.includes(module);
+                      return (
+                        <Button
+                          key={module}
+                          type="button"
+                          size="sm"
+                          variant={enabled ? "primary" : "outline"}
+                          className="justify-start"
+                          onClick={() => toggleCoverLetterFocusModule(module)}
+                          disabled={isGeneratingCoverLetter}
+                        >
+                          {COVER_LETTER_MODULE_LABELS[module]}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsCoverLetterDialogOpen(false)}
+              disabled={isGeneratingCoverLetter}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleGenerateCoverLetter} disabled={!canGenerateCoverLetter}>
+              {isGeneratingCoverLetter ? "Queueing..." : "Generate Cover Letter"}
             </Button>
           </DialogFooter>
         </DialogContent>

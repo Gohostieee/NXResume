@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createId } from "@paralleldrive/cuid2";
+import { useRouter } from "next/navigation";
 import { X } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -15,6 +16,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -67,6 +78,17 @@ type ExperienceItem = {
   endDate: string;
   summary: string;
   highlights: string[];
+};
+
+type ProfileSuggestion = {
+  _id: string;
+  sourceType: string;
+  proposedPatch: Partial<CareerProfile>;
+  suggestedFields: string[];
+  conflictingFields: string[];
+  defaultSelectedFields: string[];
+  fieldLabels: Record<string, string>;
+  createdAt: number;
 };
 
 const defaultProfile: CareerProfile = {
@@ -135,56 +157,131 @@ const TagInput = ({ label, value, onChange, placeholder, description }: TagInput
 
 const workArrangementOptions = ["Remote", "Hybrid", "On-site", "Flexible"];
 
+const formatPatchValue = (value: unknown) => {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object") {
+          const experience = entry as ExperienceItem;
+          return [experience.title, experience.company].filter(Boolean).join(" @ ");
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+  return "";
+};
+
+const formatSuggestionSource = (sourceType: string) => {
+  if (sourceType === "resume_json_import") return "Resume JSON Import";
+  if (sourceType === "resume_pdf_import") return "Resume PDF Import";
+  if (sourceType === "resume_snapshot") return "Current Resume Snapshot";
+  if (sourceType === "application") return "Application / Job Description";
+  return sourceType;
+};
+
 export default function ProfilePage() {
-  const profile = useQuery(api.careerProfiles.getCurrentProfile);
+  const router = useRouter();
+  const profileContext = useQuery(api.careerProfiles.getContext);
+  const resumes = useQuery(api.resumes.list) ?? [];
+  const suggestions = (useQuery(api.careerProfiles.listSuggestions) ?? []) as ProfileSuggestion[];
   const saveProfile = useMutation(api.careerProfiles.saveProfile);
+  const createResumeFromProfile = useMutation(api.resumes.createFromProfile);
+  const applySuggestion = useMutation(api.careerProfiles.applySuggestion);
+  const dismissSuggestion = useMutation(api.careerProfiles.dismissSuggestion);
+  const importFromResume = useMutation(api.careerProfiles.importFromResume);
   const [draft, setDraft] = useState<CareerProfile>(defaultProfile);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [selectedResumeId, setSelectedResumeId] = useState("");
+  const [isImportingResume, setIsImportingResume] = useState(false);
+  const [quickActionNotice, setQuickActionNotice] = useState<string | null>(null);
+  const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
+  const [dismissingSuggestionId, setDismissingSuggestionId] = useState<string | null>(null);
+  const [selectedSuggestionFields, setSelectedSuggestionFields] = useState<Record<string, string[]>>(
+    {},
+  );
 
   useEffect(() => {
-    if (profile === undefined) return;
-    if (!profile) {
+    if (profileContext === undefined) return;
+    if (!profileContext) {
       setDraft(defaultProfile);
       return;
     }
 
+    const profile = profileContext.profile;
     setDraft({
-      fullName: profile.fullName ?? "",
-      email: profile.email ?? "",
-      phone: profile.phone ?? "",
-      headline: profile.headline ?? "",
-      currentTitle: profile.currentTitle ?? "",
-      yearsOfExperience: profile.yearsOfExperience ?? "",
-      location: profile.location ?? "",
-      websiteLinks: profile.websiteLinks ?? [],
-      socialLinks: profile.socialLinks ?? [],
-      summary: profile.summary ?? "",
-      experience: profile.experience ?? [],
-      workAuthorization: profile.workAuthorization ?? "",
-      desiredRoles: profile.desiredRoles ?? [],
-      industries: profile.industries ?? [],
-      skills: profile.skills ?? [],
-      tools: profile.tools ?? [],
-      strengths: profile.strengths ?? [],
-      achievements: profile.achievements ?? "",
-      education: profile.education ?? "",
-      certifications: profile.certifications ?? [],
-      portfolioLinks: profile.portfolioLinks ?? [],
-      targetCompanies: profile.targetCompanies ?? [],
-      jobTypes: profile.jobTypes ?? [],
-      workArrangement: profile.workArrangement ?? "",
-      relocation: profile.relocation ?? false,
-      salaryRange: profile.salaryRange ?? "",
-      availability: profile.availability ?? "",
-      additionalContext: profile.additionalContext ?? "",
+      fullName: profile.fullName,
+      email: profile.email,
+      phone: profile.phone,
+      headline: profile.headline,
+      currentTitle: profile.currentTitle,
+      yearsOfExperience: profile.yearsOfExperience,
+      location: profile.location,
+      websiteLinks: profile.websiteLinks,
+      socialLinks: profile.socialLinks,
+      summary: profile.summary,
+      experience: profile.experience,
+      workAuthorization: profile.workAuthorization,
+      desiredRoles: profile.desiredRoles,
+      industries: profile.industries,
+      skills: profile.skills,
+      tools: profile.tools,
+      strengths: profile.strengths,
+      achievements: profile.achievements,
+      education: profile.education,
+      certifications: profile.certifications,
+      portfolioLinks: profile.portfolioLinks,
+      targetCompanies: profile.targetCompanies,
+      jobTypes: profile.jobTypes,
+      workArrangement: profile.workArrangement,
+      relocation: profile.relocation,
+      salaryRange: profile.salaryRange,
+      availability: profile.availability,
+      additionalContext: profile.additionalContext,
     });
-  }, [profile]);
+  }, [profileContext]);
+
+  useEffect(() => {
+    if (suggestions.length === 0) return;
+
+    setSelectedSuggestionFields((current) => {
+      const next = { ...current };
+      for (const suggestion of suggestions) {
+        if (!next[suggestion._id]) {
+          next[suggestion._id] =
+            suggestion.defaultSelectedFields.length > 0
+              ? suggestion.defaultSelectedFields
+              : suggestion.suggestedFields;
+        }
+      }
+      return next;
+    });
+  }, [suggestions]);
+
+  useEffect(() => {
+    if (!selectedResumeId && resumes.length > 0) {
+      setSelectedResumeId(resumes[0]._id);
+    }
+  }, [resumes, selectedResumeId]);
 
   const applyUpdate = (updates: Partial<CareerProfile>) => {
     setDraft((prev) => ({ ...prev, ...updates }));
     setSaveState("idle");
+  };
+
+  const focusSummaryField = () => {
+    window.requestAnimationFrame(() => {
+      const field = document.getElementById("summary") as HTMLTextAreaElement | null;
+      field?.scrollIntoView({ behavior: "smooth", block: "center" });
+      field?.focus();
+    });
   };
 
   const handleSave = async () => {
@@ -196,6 +293,96 @@ export default function ProfilePage() {
       console.error("Failed to save profile:", error);
       setSaveState("error");
     }
+  };
+
+  const handleCreateFromProfile = async () => {
+    const resumeId = await createResumeFromProfile({
+      title: draft.currentTitle?.trim()
+        ? `${draft.currentTitle} Resume`
+        : draft.fullName?.trim()
+          ? `${draft.fullName} Resume`
+          : "Profile Resume",
+    });
+
+    router.push(`/builder/${resumeId}`);
+  };
+
+  const handleGenerateTargetSummary = () => {
+    const generatedSummary = profileContext?.derived.targetSummary?.trim() ?? "";
+
+    if (!generatedSummary) {
+      setQuickActionNotice(
+        "There is not enough profile context yet to generate a target summary.",
+      );
+      return;
+    }
+
+    if (generatedSummary === draft.summary.trim()) {
+      setQuickActionNotice(
+        "Professional Summary already matches the generated target summary.",
+      );
+      focusSummaryField();
+      return;
+    }
+
+    applyUpdate({ summary: generatedSummary });
+    setQuickActionNotice(
+      "Target summary inserted into Professional Summary below. Save Profile to keep it.",
+    );
+    focusSummaryField();
+  };
+
+  const handleImportFromResume = async () => {
+    if (!selectedResumeId) return;
+
+    setIsImportingResume(true);
+    try {
+      await importFromResume({
+        resumeId: selectedResumeId as any,
+      });
+      setIsImportDialogOpen(false);
+    } finally {
+      setIsImportingResume(false);
+    }
+  };
+
+  const handleApplySuggestion = async (suggestion: ProfileSuggestion) => {
+    const selectedFields = selectedSuggestionFields[suggestion._id] ?? [];
+    if (selectedFields.length === 0) return;
+
+    setApplyingSuggestionId(suggestion._id);
+    try {
+      await applySuggestion({
+        suggestionId: suggestion._id as any,
+        selectedFields,
+      });
+    } finally {
+      setApplyingSuggestionId(null);
+    }
+  };
+
+  const handleDismissSuggestion = async (suggestionId: string) => {
+    setDismissingSuggestionId(suggestionId);
+    try {
+      await dismissSuggestion({
+        suggestionId: suggestionId as any,
+      });
+    } finally {
+      setDismissingSuggestionId(null);
+    }
+  };
+
+  const toggleSuggestionField = (suggestionId: string, field: string, checked: boolean) => {
+    setSelectedSuggestionFields((current) => {
+      const existing = current[suggestionId] ?? [];
+      const next = checked
+        ? Array.from(new Set([...existing, field]))
+        : existing.filter((entry) => entry !== field);
+      return {
+        ...current,
+        [suggestionId]: next,
+      };
+    });
   };
 
   const handleAddExperience = () => {
@@ -226,7 +413,7 @@ export default function ProfilePage() {
     });
   };
 
-  if (profile === undefined) {
+  if (profileContext === undefined) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-foreground/60">Loading...</div>
@@ -234,8 +421,8 @@ export default function ProfilePage() {
     );
   }
 
-  const lastUpdated = profile?.updatedAt
-    ? new Date(profile.updatedAt).toLocaleString()
+  const lastUpdated = profileContext?.updatedAt
+    ? new Date(profileContext.updatedAt).toLocaleString()
     : null;
 
   return (
@@ -247,15 +434,269 @@ export default function ProfilePage() {
             Build a career profile the AI can use for tailored guidance.
           </p>
         </div>
-        <div className="text-sm text-foreground/60">
-          {lastUpdated ? `Last updated ${lastUpdated}` : "No profile saved yet."}
+        <div className="flex items-center gap-3">
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" disabled={resumes.length === 0}>
+                Import From Resume
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Import From Resume</DialogTitle>
+                <DialogDescription>
+                  Pull profile suggestions from one of your saved resumes.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-3 py-2">
+                {resumes.length === 0 ? (
+                  <div className="rounded border border-dashed border-border p-4 text-sm text-foreground/60">
+                    Create or import a resume first, then come back here to infer profile updates.
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    <Label htmlFor="resume-import">Resume</Label>
+                    <Select value={selectedResumeId} onValueChange={setSelectedResumeId}>
+                      <SelectTrigger id="resume-import">
+                        <SelectValue placeholder="Select a resume" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resumes.map((resume) => (
+                          <SelectItem key={resume._id} value={resume._id}>
+                            {resume.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-foreground/60">
+                      This creates reviewable profile suggestions. It does not overwrite your saved profile.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsImportDialogOpen(false)}
+                  disabled={isImportingResume}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleImportFromResume()}
+                  disabled={isImportingResume || resumes.length === 0 || !selectedResumeId}
+                >
+                  {isImportingResume ? "Importing..." : "Import Resume Facts"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <div className="text-sm text-foreground/60">
+            {lastUpdated ? `Last updated ${lastUpdated}` : "No profile saved yet."}
+          </div>
         </div>
       </div>
 
       <div className="space-y-6">
+        {profileContext && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile Intelligence</CardTitle>
+              <CardDescription>
+                Completion, missing signals, and quick actions powered by your saved profile.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-secondary/20 p-4">
+                  <div className="text-sm font-semibold">
+                    Completion Score: {profileContext.completeness.score}%
+                  </div>
+                  <div className="mt-1 text-sm text-foreground/60">
+                    {profileContext.completeness.completedSections}/
+                    {profileContext.completeness.totalSections} core areas complete.
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {profileContext.completeness.checklist.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-md border px-3 py-2 text-sm ${
+                          item.complete
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                            : "border-amber-200 bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-secondary/20 p-4">
+                  <div className="text-sm font-semibold">Missing Key Context</div>
+                  {profileContext.missingSignals.length === 0 ? (
+                    <p className="mt-2 text-sm text-foreground/60">
+                      Your profile covers the core signals used by autofill and AI jobs.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {profileContext.missingSignals.map((signal) => (
+                        <div key={signal} className="rounded-md border bg-background px-3 py-2 text-sm">
+                          {signal}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-secondary/20 p-4">
+                  <div className="text-sm font-semibold">Derived Defaults</div>
+                  <div className="mt-3 space-y-2 text-sm text-foreground/70">
+                    <div>
+                      <span className="font-medium text-foreground">Primary role: </span>
+                      {profileContext.derived.primaryTargetRole || "Not set"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Top skills: </span>
+                      {profileContext.derived.topSkills.slice(0, 6).join(", ") || "Not set"}
+                    </div>
+                    <div>
+                      <span className="font-medium text-foreground">Work setup: </span>
+                      {profileContext.derived.preferredWorkSetup || "Not set"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-secondary/20 p-4">
+                  <div className="text-sm font-semibold">Quick Actions</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => void handleCreateFromProfile()}>
+                      Use This Profile To Start A Resume
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleGenerateTargetSummary}
+                    >
+                      Generate Target Summary
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        document.getElementById("profile-suggestions")?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        })
+                      }
+                    >
+                      Review Inferred Updates
+                    </Button>
+                  </div>
+                  {quickActionNotice && (
+                    <div className="mt-3 rounded-md border bg-background px-3 py-2 text-sm text-foreground/70">
+                      {quickActionNotice}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card id="profile-suggestions">
+          <CardHeader>
+            <CardTitle>Recently Inferred Updates</CardTitle>
+            <CardDescription>
+              Review changes inferred from resumes, imports, and applications before applying them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {suggestions.length === 0 ? (
+              <div className="rounded border border-dashed border-border p-4 text-sm text-foreground/60">
+                No pending profile suggestions yet.
+              </div>
+            ) : (
+              suggestions.map((suggestion) => (
+                <div key={suggestion._id} className="rounded-lg border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        {formatSuggestionSource(suggestion.sourceType)}
+                      </div>
+                      <div className="text-xs text-foreground/60">
+                        {new Date(suggestion.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleDismissSuggestion(suggestion._id)}
+                        disabled={dismissingSuggestionId === suggestion._id}
+                      >
+                        {dismissingSuggestionId === suggestion._id ? "Dismissing..." : "Dismiss"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => void handleApplySuggestion(suggestion)}
+                        disabled={
+                          applyingSuggestionId === suggestion._id ||
+                          (selectedSuggestionFields[suggestion._id] ?? []).length === 0
+                        }
+                      >
+                        {applyingSuggestionId === suggestion._id ? "Applying..." : "Apply Selected"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {suggestion.suggestedFields.map((field) => (
+                      <label
+                        key={`${suggestion._id}-${field}`}
+                        className="flex items-start gap-3 rounded-md border bg-secondary/10 px-3 py-3"
+                      >
+                        <Checkbox
+                          checked={(selectedSuggestionFields[suggestion._id] ?? []).includes(field)}
+                          onCheckedChange={(checked) =>
+                            toggleSuggestionField(suggestion._id, field, checked === true)
+                          }
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium">
+                            {suggestion.fieldLabels[field] ?? field}
+                          </div>
+                          <div className="mt-1 text-sm text-foreground/70">
+                            {formatPatchValue(
+                              suggestion.proposedPatch[
+                                field as keyof typeof suggestion.proposedPatch
+                              ],
+                            ) || "No preview available"}
+                          </div>
+                          {suggestion.conflictingFields.includes(field) && (
+                            <div className="mt-2 text-xs text-amber-700">
+                              Conflicts with a saved value. This will replace it only if selected.
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
-            <CardTitle>Profile Basics</CardTitle>
+            <CardTitle>Identity</CardTitle>
             <CardDescription>Name, contact details, and public links.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -327,7 +768,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Summary</CardTitle>
+            <CardTitle>Positioning</CardTitle>
             <CardDescription>Short, punchy overview the AI can reuse.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -504,7 +945,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Target Roles & Market</CardTitle>
+            <CardTitle>Search Direction</CardTitle>
             <CardDescription>Define where you want to go next.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -534,7 +975,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Skills & Strengths</CardTitle>
+            <CardTitle>Positioning & Strengths</CardTitle>
             <CardDescription>Capture the capabilities you want to highlight.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -570,7 +1011,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Preferences</CardTitle>
+            <CardTitle>Search Preferences</CardTitle>
             <CardDescription>Let the AI know your job search constraints.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -633,7 +1074,7 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Education & Links</CardTitle>
+            <CardTitle>Evidence</CardTitle>
             <CardDescription>Supporting details and URLs the AI can use.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

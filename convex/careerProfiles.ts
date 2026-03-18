@@ -1,5 +1,20 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import {
+  PROFILE_FIELD_LABELS,
+  sanitizeCareerProfilePatch,
+  type CareerProfilePatch,
+} from "../lib/profile/context";
+import { buildProfilePatchFromResume } from "../lib/profile/suggestions";
+import {
+  applySuggestionPatch,
+  buildSuggestionView,
+  getCareerProfileContextByUserId,
+  getCurrentUserByIdentity,
+  getPendingProfileSuggestionsByUserId,
+  upsertProfileSuggestion,
+} from "./profileSupport";
+import { resolveDefaultResumeSnapshot } from "./resumeHistory";
 
 const experienceItem = v.object({
   id: v.string(),
@@ -45,14 +60,7 @@ const profileArgs = {
 
 export const getCurrentProfile = query({
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
+    const user = await getCurrentUserByIdentity(ctx);
     if (!user) return null;
 
     return await ctx.db
@@ -62,18 +70,35 @@ export const getCurrentProfile = query({
   },
 });
 
+export const getContext = query({
+  handler: async (ctx) => {
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) return null;
+
+    return await getCareerProfileContextByUserId(ctx, user._id);
+  },
+});
+
+export const listSuggestions = query({
+  handler: async (ctx) => {
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) return [];
+
+    const profileContext = await getCareerProfileContextByUserId(ctx, user._id);
+    const suggestions = await getPendingProfileSuggestionsByUserId(ctx, user._id);
+
+    return suggestions.map((suggestion: any) => ({
+      ...buildSuggestionView(suggestion, profileContext.profile),
+      fieldLabels: PROFILE_FIELD_LABELS,
+    }));
+  },
+});
+
 export const saveProfile = mutation({
   args: profileArgs,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) throw new Error("User not found");
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) throw new Error("Unauthorized");
 
     const existing = await ctx.db
       .query("careerProfiles")
@@ -81,10 +106,11 @@ export const saveProfile = mutation({
       .first();
 
     const timestamp = Date.now();
+    const nextProfile = sanitizeCareerProfilePatch(args as CareerProfilePatch);
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        ...args,
+        ...nextProfile,
         updatedAt: timestamp,
       });
       return existing._id;
@@ -92,9 +118,70 @@ export const saveProfile = mutation({
 
     return await ctx.db.insert("careerProfiles", {
       userId: user._id,
-      ...args,
+      ...nextProfile,
       createdAt: timestamp,
       updatedAt: timestamp,
+    });
+  },
+});
+
+export const applySuggestion = mutation({
+  args: {
+    suggestionId: v.id("profileSuggestions"),
+    selectedFields: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) throw new Error("Unauthorized");
+
+    return await applySuggestionPatch(ctx, {
+      userId: user._id,
+      suggestionId: args.suggestionId,
+      selectedFields: args.selectedFields,
+    });
+  },
+});
+
+export const dismissSuggestion = mutation({
+  args: {
+    suggestionId: v.id("profileSuggestions"),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) throw new Error("Unauthorized");
+
+    const suggestion = await ctx.db.get(args.suggestionId);
+    if (!suggestion) return null;
+    if (suggestion.userId !== user._id) throw new Error("Unauthorized");
+
+    await ctx.db.patch(args.suggestionId, {
+      status: "dismissed",
+      updatedAt: Date.now(),
+    });
+
+    return args.suggestionId;
+  },
+});
+
+export const importFromResume = mutation({
+  args: {
+    resumeId: v.id("resumes"),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserByIdentity(ctx);
+    if (!user) throw new Error("Unauthorized");
+
+    const resume = await ctx.db.get(args.resumeId);
+    if (!resume) throw new Error("Resume not found");
+    if (resume.userId !== user._id) throw new Error("Unauthorized");
+
+    const { snapshot } = await resolveDefaultResumeSnapshot(ctx, resume);
+
+    return await upsertProfileSuggestion(ctx, {
+      userId: user._id,
+      sourceType: "resume_snapshot",
+      sourceId: resume._id,
+      proposedPatch: buildProfilePatchFromResume(snapshot.data),
     });
   },
 });

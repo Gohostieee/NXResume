@@ -6,7 +6,7 @@ export const badgeVariants = cva(
     variants: {
       variant: {
         primary: "border-primary bg-primary text-primary-foreground",
-        secondary: "border-secondary bg-secondary text-secondary-foreground",
+        secondary: "border-border bg-secondary text-foreground",
         error: "border-error bg-error text-error-foreground",
         warning: "border-warning bg-warning text-warning-foreground",
         info: "border-info bg-info text-info-foreground",
@@ -18,7 +18,7 @@ export const badgeVariants = cva(
     },
     compoundVariants: [
       { outline: true, variant: "primary", className: "text-primary" },
-      { outline: true, variant: "secondary", className: "text-secondary" },
+      { outline: true, variant: "secondary", className: "border-border text-foreground" },
       { outline: true, variant: "error", className: "text-error" },
       { outline: true, variant: "warning", className: "text-warning" },
       { outline: true, variant: "info", className: "text-info" },

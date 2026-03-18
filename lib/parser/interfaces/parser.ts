@@ -1,4 +1,4 @@
-import type { ResumeData } from "@reactive-resume/schema";
+import type { ResumeData } from "../../schema";
 import type { Schema } from "zod";
 
 export type Parser<Data = unknown, T = unknown, Result = ResumeData> = {

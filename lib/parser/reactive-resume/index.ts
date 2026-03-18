@@ -1,6 +1,6 @@
-import type { ResumeData } from "@reactive-resume/schema";
-import { resumeDataSchema } from "@reactive-resume/schema";
-import type { Json } from "@reactive-resume/utils";
+import type { ResumeData } from "../../schema";
+import { resumeDataSchema } from "../../schema";
+import type { Json } from "../../utils/namespaces/types";
 import type { Schema } from "zod";
 
 import type { Parser } from "../interfaces/parser";

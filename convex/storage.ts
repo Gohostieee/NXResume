@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 export const generateUploadUrl = mutation({
   handler: async (ctx) => {
@@ -48,5 +48,13 @@ export const deleteFile = mutation({
     if (!identity) throw new Error("Unauthorized");
 
     await ctx.storage.delete(storageId);
+  },
+});
+
+export const deleteFileInternal = internalMutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => {
+    await ctx.storage.delete(storageId);
+    return storageId;
   },
 });

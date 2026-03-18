@@ -25,6 +25,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useBuilderStore } from "@/stores/builder";
 import { useResumeStore } from "@/stores/resume";
+import { useAutoSaveStore } from "@/stores/auto-save";
 import { UndoRedoControls } from "./undo-redo-controls";
 
 type BuilderToolbarProps = {
@@ -38,6 +39,7 @@ export const BuilderToolbar = ({ className, showHistoryControls = true }: Builde
 
   const setValue = useResumeStore((state) => state.setValue);
   const resume = useResumeStore((state) => state.resume);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
 
   const frameRef = useBuilderStore((state) => state.frame.ref);
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -156,6 +158,7 @@ export const BuilderToolbar = ({ className, showHistoryControls = true }: Builde
           pressed={pageOptions?.breakLine ?? true}
           onPressedChange={(pressed) => {
             setValue("metadata.page.options.breakLine", pressed);
+            void flushCommit();
           }}
         >
           <LineSegment className="h-4 w-4" />
@@ -168,6 +171,7 @@ export const BuilderToolbar = ({ className, showHistoryControls = true }: Builde
           pressed={pageOptions?.pageNumbers ?? true}
           onPressedChange={(pressed) => {
             setValue("metadata.page.options.pageNumbers", pressed);
+            void flushCommit();
           }}
         >
           <Hash className="h-4 w-4" />

@@ -6,23 +6,60 @@ import { useBuilderStore } from "@/stores/builder";
 
 export function PreviewPanel() {
   const resume = useResumeStore((state) => state.resume);
+  const commits = useResumeStore((state) => state.commits);
+  const checkedOutCommitId = useResumeStore((state) => state.checkedOutCommitId);
+  const proposal = useResumeStore((state) => state.proposal);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const setFrameRef = useBuilderStore((state) => state.frame.setRef);
   const [isArtboardReady, setIsArtboardReady] = useState(false);
   const resumeId = resume?.id || resume?._id;
+  const resumeData = resume?.data;
+  const hasResumeData = Boolean(
+    resumeData?.basics && resumeData?.sections && resumeData?.metadata,
+  );
 
   // Send resume data to iframe
   const sendResumeData = useCallback(() => {
-    if (iframeRef.current?.contentWindow && resume?.data) {
+    if (iframeRef.current?.contentWindow && hasResumeData) {
+      const checkedOutCommit = checkedOutCommitId
+        ? commits.find((commit) => commit._id === checkedOutCommitId) ?? null
+        : null;
+      const parentCommit =
+        checkedOutCommit?.parentCommitId
+          ? commits.find((commit) => commit._id === checkedOutCommit.parentCommitId) ?? null
+          : null;
+      const historyDiffMode = Boolean(checkedOutCommit);
+
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "RESUME_DATA",
-          payload: resume.data,
+          type: "RESUME_PREVIEW_STATE",
+          payload: {
+            currentResume: resumeData,
+            baseResume: proposal.isPreviewOpen
+              ? proposal.baseSnapshot
+              : historyDiffMode
+                ? parentCommit?.snapshot.data ?? null
+                : null,
+            proposalResume: proposal.isPreviewOpen
+              ? proposal.proposalSnapshot
+              : historyDiffMode
+                ? checkedOutCommit?.snapshot.data ?? resumeData
+                : null,
+            diffMode: proposal.isPreviewOpen || historyDiffMode,
+          },
         },
         "*"
       );
     }
-  }, [resume?.data]);
+  }, [
+    checkedOutCommitId,
+    commits,
+    proposal.baseSnapshot,
+    proposal.isPreviewOpen,
+    proposal.proposalSnapshot,
+    hasResumeData,
+    resumeData,
+  ]);
 
   // Listen for artboard ready message
   useEffect(() => {
@@ -41,10 +78,10 @@ export function PreviewPanel() {
 
   // Send data whenever resume changes and artboard is ready
   useEffect(() => {
-    if (isArtboardReady && resume?.data) {
+    if (isArtboardReady && hasResumeData) {
       sendResumeData();
     }
-  }, [isArtboardReady, resume?.data, sendResumeData]);
+  }, [hasResumeData, isArtboardReady, proposal, sendResumeData]);
 
   // Handle iframe load
   const handleIframeLoad = useCallback(() => {
@@ -57,7 +94,7 @@ export function PreviewPanel() {
     return () => setFrameRef(null);
   }, [setFrameRef, resumeId]);
 
-  if (!resume?.data) {
+  if (!hasResumeData) {
     return (
       <main className="flex flex-1 items-center justify-center bg-secondary/30">
         <div className="text-foreground/60">Loading preview...</div>

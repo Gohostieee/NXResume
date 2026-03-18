@@ -3,27 +3,30 @@
 import { ArrowClockwise, ArrowCounterClockwise } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useTemporalResumeStore } from "@/stores/resume";
+import { useResumeStore } from "@/stores/resume";
 
 type UndoRedoControlsProps = {
   className?: string;
 };
 
 export const UndoRedoControls = ({ className }: UndoRedoControlsProps) => {
-  const undo = useTemporalResumeStore((state) => state.undo);
-  const redo = useTemporalResumeStore((state) => state.redo);
-  const canUndo = useTemporalResumeStore((state) => (state.pastStates?.length ?? 0) > 0);
-  const canRedo = useTemporalResumeStore((state) => (state.futureStates?.length ?? 0) > 0);
+  const undo = useResumeStore((state) => state.undo);
+  const redo = useResumeStore((state) => state.redo);
+  const canUndo = useResumeStore((state) => state.undoStack.length > 0);
+  const canRedo = useResumeStore((state) => state.redoStack.length > 0);
+  const checkedOutCommitId = useResumeStore((state) => state.checkedOutCommitId);
+  const activeHeadCommitId = useResumeStore((state) => state.activeBranch?.headCommitId);
+  const isReadonly = Boolean(checkedOutCommitId) && checkedOutCommitId !== activeHeadCommitId;
 
   return (
     <div className={className}>
       <Tooltip content="Undo">
-        <Button size="icon" variant="ghost" className="rounded-none" onClick={() => undo()} disabled={!canUndo}>
+        <Button size="icon" variant="ghost" className="rounded-none" onClick={() => undo()} disabled={!canUndo || isReadonly}>
           <ArrowCounterClockwise className="h-4 w-4" />
         </Button>
       </Tooltip>
       <Tooltip content="Redo">
-        <Button size="icon" variant="ghost" className="rounded-none" onClick={() => redo()} disabled={!canRedo}>
+        <Button size="icon" variant="ghost" className="rounded-none" onClick={() => redo()} disabled={!canRedo || isReadonly}>
           <ArrowClockwise className="h-4 w-4" />
         </Button>
       </Tooltip>

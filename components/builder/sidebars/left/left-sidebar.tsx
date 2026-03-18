@@ -1,6 +1,7 @@
 "use client";
 
 import { useResumeStore } from "@/stores/resume";
+import { useAutoSaveStore } from "@/stores/auto-save";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -43,8 +44,16 @@ export function LeftSidebar() {
   const addSection = useResumeStore((state) => state.addSection);
   const expandAllSections = useResumeStore((state) => state.expandAllSections);
   const collapseAllSections = useResumeStore((state) => state.collapseAllSections);
+  const checkedOutCommitId = useResumeStore((state) => state.checkedOutCommitId);
+  const activeHeadCommitId = useResumeStore((state) => state.activeBranch?.headCommitId);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
+  const isReadonly = Boolean(checkedOutCommitId) && checkedOutCommitId !== activeHeadCommitId;
+  const resumeData = resume?.data;
+  const hasResumeData = Boolean(
+    resumeData?.basics && resumeData?.sections && resumeData?.metadata,
+  );
 
-  if (!resume?.data) {
+  if (!hasResumeData) {
     return (
       <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-r">
         <div className="flex h-full items-center justify-center">
@@ -54,7 +63,7 @@ export function LeftSidebar() {
     );
   }
 
-  const customSections = resume.data.sections.custom;
+  const customSections = resumeData.sections.custom ?? {};
 
   return (
     <>
@@ -77,8 +86,14 @@ export function LeftSidebar() {
           <h2 className="text-lg font-semibold">Resume Editor</h2>
         </div>
 
-        <ScrollArea allowOverflow className="flex-1 min-h-0 w-full">
+        <ScrollArea className="flex-1 min-h-0 w-full">
           <div className="w-full min-w-0 space-y-6 p-4">
+            {isReadonly && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                This is a historical commit preview. Open History to return to the branch head or
+                branch from this commit before editing.
+              </div>
+            )}
             <BasicsSection />
 
             <Separator />
@@ -214,7 +229,14 @@ export function LeftSidebar() {
             <Separator />
 
             <div className="space-y-3">
-              <Button variant="outline" className="w-full" onClick={addSection}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  addSection();
+                  void flushCommit();
+                }}
+              >
                 Add a new section
               </Button>
               <div className="grid grid-cols-2 gap-2">

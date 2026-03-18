@@ -221,6 +221,7 @@ const Section = <T,>({
             return (
               <div
                 key={item.id}
+                data-resume-item-id={item.id}
                 className={cn("relative space-y-2 pl-4 group-[.sidebar]:pl-0", className)}
               >
                 <div className="relative -ml-4 group-[.sidebar]:ml-0">

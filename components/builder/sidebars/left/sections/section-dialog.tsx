@@ -51,7 +51,7 @@ export const SectionDialog = <T extends SectionItem>({
   const { isOpen, mode, close, payload } = useDialog<T>(id);
 
   const setValue = useResumeStore((state) => state.setValue);
-  const triggerSave = useAutoSaveStore((state) => state.triggerSave);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
   const section = useResumeStore((state) => {
     return get(state.resume?.data?.sections, id);
   }) as SectionWithItem<T> | null;
@@ -113,7 +113,7 @@ export const SectionDialog = <T extends SectionItem>({
 
     // Trigger save after dialog closes
     close();
-    triggerSave();
+    void flushCommit();
   };
 
   const onReset = () => {

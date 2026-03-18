@@ -25,6 +25,7 @@ import { SectionOptions } from "./section-options";
 
 import { useDialog } from "@/stores/dialog";
 import { useResumeStore } from "@/stores/resume";
+import { useAutoSaveStore } from "@/stores/auto-save";
 import { SectionListItem } from "./section-list-item";
 
 type Props<T extends SectionItem> = {
@@ -39,6 +40,7 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
   const toggleCollapseSection = useResumeStore((state) => state.toggleCollapseSection);
 
   const setValue = useResumeStore((state) => state.setValue);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
   const section = useResumeStore(
     (state) => get(state.resume?.data?.sections, id) as SectionWithItem<T> | undefined,
   );
@@ -63,6 +65,7 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
 
       const sortedList = arrayMove(section.items as T[], oldIndex, newIndex);
       setValue(`sections.${id}.items`, sortedList);
+      void flushCommit();
     }
   };
 
@@ -85,6 +88,7 @@ export const SectionBase = <T extends SectionItem>({ id, title, description }: P
   const onToggleVisibility = (index: number) => {
     const visible = get(section, `items[${index}].visible`, true);
     setValue(`sections.${id}.items[${index}].visible`, !visible);
+    void flushCommit();
   };
 
   return (

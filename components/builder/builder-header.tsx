@@ -12,6 +12,8 @@ export const BuilderHeader = () => {
   const searchParams = useSearchParams();
   const title = useResumeStore((state) => state.resume.title);
   const locked = useResumeStore((state) => state.resume.locked);
+  const checkedOutCommitId = useResumeStore((state) => state.checkedOutCommitId);
+  const activeHeadCommitId = useResumeStore((state) => state.activeBranch?.headCommitId);
   const isSaving = useAutoSaveStore((state) => state.isSaving);
   const backHref =
     searchParams.get("from") === "applications"
@@ -19,6 +21,8 @@ export const BuilderHeader = () => {
       : "/dashboard/resumes";
 
   const toggle = useBuilderStore((state) => state.toggle);
+  const isReadonlyCommitView =
+    Boolean(checkedOutCommitId) && checkedOutCommitId !== activeHeadCommitId;
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-background px-4">
@@ -41,7 +45,7 @@ export const BuilderHeader = () => {
         <div>
           <h1 className="font-semibold">{title || "Resume"}</h1>
           <p className="text-xs text-foreground/60">
-            {isSaving ? "Saving..." : "Auto-save enabled"}
+            {isReadonlyCommitView ? "Viewing commit preview" : isSaving ? "Saving..." : "Auto-save enabled"}
           </p>
         </div>
 

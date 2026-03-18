@@ -29,6 +29,7 @@ import { useState } from "react";
 
 import { defaultMetadata } from "@/lib/schema";
 import { useResumeStore } from "@/stores/resume";
+import { useAutoSaveStore } from "@/stores/auto-save";
 
 type ColumnProps = {
   id: string;
@@ -107,6 +108,7 @@ const Section = ({ id, isDragging = false }: SectionProps) => {
 export const LayoutSection = () => {
   const setValue = useResumeStore((state) => state.setValue);
   const layout = useResumeStore((state) => state.resume.data.metadata.layout);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
 
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -153,12 +155,14 @@ export const LayoutSection = () => {
   const onDragEnd = (event: DragEndEvent) => {
     onDragEvent(event);
     setActiveId(null);
+    void flushCommit();
   };
 
   const onAddPage = () => {
     const layoutCopy = JSON.parse(JSON.stringify(layout));
     layoutCopy.push([[], []]);
     setValue("metadata.layout", layoutCopy);
+    void flushCommit();
   };
 
   const onRemovePage = (page: number) => {
@@ -169,6 +173,7 @@ export const LayoutSection = () => {
     layoutCopy.splice(page, 1);
 
     setValue("metadata.layout", layoutCopy);
+    void flushCommit();
   };
 
   const onResetLayout = () => {
@@ -184,6 +189,7 @@ export const LayoutSection = () => {
 
     if (customSections.length > 0) layoutCopy[0][0].push(...customSections);
     setValue("metadata.layout", layoutCopy);
+    void flushCommit();
   };
 
   return (

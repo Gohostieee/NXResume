@@ -33,21 +33,7 @@ import { LayoutSection } from "./sections/layout-section";
 import { StatisticsSection } from "./sections/statistics-section";
 import { InformationSection } from "./sections/information-section";
 
-const TEMPLATES = [
-  { value: "azurill", label: "Azurill" },
-  { value: "bronzor", label: "Bronzor" },
-  { value: "chikorita", label: "Chikorita" },
-  { value: "ditto", label: "Ditto" },
-  { value: "gengar", label: "Gengar" },
-  { value: "glalie", label: "Glalie" },
-  { value: "harvard", label: "Harvard" },
-  { value: "kakuna", label: "Kakuna" },
-  { value: "leafish", label: "Leafish" },
-  { value: "nosepass", label: "Nosepass" },
-  { value: "onyx", label: "Onyx" },
-  { value: "pikachu", label: "Pikachu" },
-  { value: "rhyhorn", label: "Rhyhorn" },
-];
+const TEMPLATES = [{ value: "harvard", label: "Harvard" }];
 
 const PAGE_FORMATS = [
   { value: "a4", label: "A4" },
@@ -120,26 +106,34 @@ function ColorPickerInput({
 export function SettingsSidebar() {
   const resume = useResumeStore((state) => state.resume);
   const setValue = useResumeStore((state) => state.setValue);
-  const triggerSave = useAutoSaveStore((state) => state.triggerSave);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
+  const checkedOutCommitId = useResumeStore((state) => state.checkedOutCommitId);
+  const activeHeadCommitId = useResumeStore((state) => state.activeBranch?.headCommitId);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [rawCopied, setRawCopied] = useState(false);
   const currentUser = useQuery(api.users.getCurrentUser);
   const incrementDownloads = useMutation(api.statistics.incrementDownloads);
   const resumeId = resume?.id || resume?._id;
+  const resumeData = resume?.data;
+  const hasResumeData = Boolean(
+    resumeData?.basics && resumeData?.sections && resumeData?.metadata,
+  );
 
   // Save on blur handler
   const handleBlur = () => {
-    triggerSave();
+    void flushCommit();
   };
 
   // For selects, switches, sliders - save immediately on change
   const handleImmediateChange = (path: string, value: unknown) => {
     setValue(path, value);
-    triggerSave();
+    void flushCommit();
   };
 
-  if (!resume?.data) {
+  const isReadonly = Boolean(checkedOutCommitId) && checkedOutCommitId !== activeHeadCommitId;
+
+  if (!hasResumeData) {
     return (
       <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l">
         <div className="flex h-full items-center justify-center">
@@ -149,8 +143,8 @@ export function SettingsSidebar() {
     );
   }
 
-  const metadata = resume.data.metadata;
-  const template = metadata?.template || "rhyhorn";
+  const metadata = resumeData.metadata;
+  const template = metadata?.template || "harvard";
   const pageFormat = metadata?.page?.format || "a4";
   const pageMargin = metadata?.page?.margin || 18;
   const pageNumbers = metadata?.page?.options?.pageNumbers ?? true;
@@ -198,7 +192,7 @@ export function SettingsSidebar() {
 
   const handleJsonExport = () => {
     const filename = `resume-${resumeId || "export"}.json`;
-    const resumeJSON = JSON.stringify(resume.data, null, 2);
+    const resumeJSON = JSON.stringify(resumeData, null, 2);
     saveAs(new Blob([resumeJSON], { type: "application/json" }), filename);
   };
 
@@ -251,6 +245,12 @@ export function SettingsSidebar() {
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-4">
+          {isReadonly && (
+            <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+              This is a historical commit preview. Switch back to a branch head or create a branch
+              from History before editing.
+            </div>
+          )}
           <Accordion type="multiple" defaultValue={["template", "layout", "theme", "export"]}>
             {/* Template Section */}
             <AccordionItem value="template">

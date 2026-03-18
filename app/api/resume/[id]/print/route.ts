@@ -20,11 +20,18 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type RenderedPageDescriptor = {
+  html: string;
+  width: number;
+  height: number;
+  pageHeight: number;
+};
+
 async function generatePDFWithRetry(
   appUrl: string,
   id: string,
   resumeData: unknown,
-  retryCount = 0
+  retryCount = 0,
 ): Promise<Buffer> {
   let browser: Browser | null = null;
   let page: Page | null = null;
@@ -43,7 +50,7 @@ async function generatePDFWithRetry(
     // We need to navigate to the domain first to set localStorage
     await page.goto(appUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 30000
+      timeout: 30000,
     });
 
     // Set the resume data in localStorage
@@ -67,7 +74,7 @@ async function generatePDFWithRetry(
           const indicator = document.querySelector("[data-font-loaded]");
           return indicator?.getAttribute("data-font-loaded") === "true";
         },
-        { timeout: 10000 }
+        { timeout: 10000 },
       )
       .catch(() => {
         // Font loading timeout - proceed anyway with fallback font
@@ -88,56 +95,87 @@ async function generatePDFWithRetry(
     // Give a bit more time for fonts and styles to load
     await sleep(500);
 
-    // Get number of pages from the layout
-    const numberPages = await page.evaluate(() => {
-      const pages = document.querySelectorAll('[data-page]');
-      return pages.length || 1;
-    });
+    // Apply custom CSS once before slicing the rendered pages.
+    const css = (resumeData as { metadata?: { css?: { visible?: boolean; value?: string } } })
+      ?.metadata?.css;
+    if (css?.visible && css?.value) {
+      await page.evaluate((cssValue: string) => {
+        const styleTag = document.createElement("style");
+        styleTag.textContent = cssValue;
+        document.head.append(styleTag);
+      }, css.value);
+    }
+
+    const renderedPages = (await page.evaluate(() => {
+      return Array.from(document.querySelectorAll<HTMLElement>("[data-page]")).map((element) => ({
+        html: element.outerHTML,
+        width: Math.ceil(element.scrollWidth),
+        height: Math.ceil(element.scrollHeight),
+        pageHeight: Math.ceil(
+          Number.parseFloat(element.dataset.pageHeight ?? "") ||
+            element.getBoundingClientRect().height,
+        ),
+      }));
+    })) as RenderedPageDescriptor[];
 
     const pagesBuffer: Buffer[] = [];
 
-    // Process each page
-    for (let index = 1; index <= numberPages; index++) {
-      const pageElement = await page.$(`[data-page="${index}"]`);
+    // Slice each rendered artboard page into physical PDF pages.
+    for (const renderedPage of renderedPages) {
+      const sliceCount = Math.max(1, Math.ceil(renderedPage.height / renderedPage.pageHeight));
 
-      if (!pageElement) continue;
+      for (let sliceIndex = 0; sliceIndex < sliceCount; sliceIndex += 1) {
+        const offset = sliceIndex * renderedPage.pageHeight;
 
-      const dimensions = await pageElement.evaluate((el) => ({
-        width: el.scrollWidth,
-        height: el.scrollHeight,
-      }));
+        await page.evaluate(
+          ({ html, width, pageHeight, offsetY }) => {
+            document.body.innerHTML = "";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+            document.body.style.background = "transparent";
 
-      // Clone this page element and render it alone
-      const temporaryHtml = await page.evaluate((element: Element) => {
-        const clonedElement = element.cloneNode(true) as HTMLDivElement;
-        const temporaryHtml_ = document.body.innerHTML;
-        document.body.innerHTML = clonedElement.outerHTML;
-        return temporaryHtml_;
-      }, pageElement);
+            const wrapper = document.createElement("div");
+            wrapper.style.position = "relative";
+            wrapper.style.width = `${width}px`;
+            wrapper.style.height = `${pageHeight}px`;
+            wrapper.style.overflow = "hidden";
+            wrapper.style.margin = "0";
+            wrapper.style.padding = "0";
+            wrapper.style.background = "white";
+            wrapper.innerHTML = html;
 
-      // Apply custom CSS if enabled
-      const css = (resumeData as { metadata?: { css?: { visible?: boolean; value?: string } } })?.metadata?.css;
-      if (css?.visible && css?.value) {
-        await page.evaluate((cssValue: string) => {
-          const styleTag = document.createElement("style");
-          styleTag.textContent = cssValue;
-          document.head.append(styleTag);
-        }, css.value);
-      }
+            const content = wrapper.firstElementChild;
+            if (content instanceof HTMLElement) {
+              content.style.margin = "0";
+              content.style.transform = `translateY(-${offsetY}px)`;
+              content.style.transformOrigin = "top left";
+            }
 
-      // Generate PDF for this page
-      const uint8array = await page.pdf({
-        width: dimensions.width,
-        height: dimensions.height,
-        printBackground: true,
-      });
-      pagesBuffer.push(Buffer.from(uint8array));
+            document.body.appendChild(wrapper);
+          },
+          {
+            html: renderedPage.html,
+            width: renderedPage.width,
+            pageHeight: renderedPage.pageHeight,
+            offsetY: offset,
+          },
+        );
 
-      // Restore original HTML for next page
-      if (index < numberPages) {
-        await page.evaluate((html: string) => {
-          document.body.innerHTML = html;
-        }, temporaryHtml);
+        await sleep(50);
+
+        const uint8array = await page.pdf({
+          width: renderedPage.width,
+          height: renderedPage.pageHeight,
+          printBackground: true,
+          margin: {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+          },
+        });
+
+        pagesBuffer.push(Buffer.from(uint8array));
       }
     }
 
@@ -182,10 +220,7 @@ async function generatePDFWithRetry(
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { userId: clerkUserId } = await auth();
     if (!clerkUserId) {
@@ -216,24 +251,20 @@ export async function POST(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
     // Generate PDF with retry logic
-    const pdfBuffer = await generatePDFWithRetry(
-      appUrl,
-      id,
-      resume.data
-    );
+    const pdfBuffer = await generatePDFWithRetry(appUrl, id, resume.resolvedSnapshot?.data ?? resume.data);
 
     // Return the PDF
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${resume.title || "resume"}.pdf"`,
+        "Content-Disposition": `attachment; filename="${resume.resolvedSnapshot?.title || resume.title || "resume"}.pdf"`,
       },
     });
   } catch (error) {
     console.error("PDF generation error:", error);
     return NextResponse.json(
       { error: "Failed to generate PDF", details: (error as Error).message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -199,7 +199,7 @@ const Section = <T,>({
             const keywords = (keywordsKey && get(item, keywordsKey, [])) as string[] | undefined;
 
             return (
-              <div key={item.id} className={className}>
+              <div key={item.id} data-resume-item-id={item.id} className={className}>
                 <div>{children?.(item as T)}</div>
 
                 {url !== undefined && section.separateLinks && <Link url={url} />}

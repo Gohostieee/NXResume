@@ -24,6 +24,7 @@ import { useMemo } from "react";
 
 import { useDialog } from "@/stores/dialog";
 import { useResumeStore } from "@/stores/resume";
+import { useAutoSaveStore } from "@/stores/auto-save";
 
 type Props = { id: SectionKey };
 
@@ -32,6 +33,7 @@ export const SectionOptions = ({ id }: Props) => {
 
   const setValue = useResumeStore((state) => state.setValue);
   const removeSection = useResumeStore((state) => state.removeSection);
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
 
   const section = useResumeStore((state) => get(state.resume?.data?.sections, id)) as SectionWithItem | undefined;
   const originalName = get(defaultSections, `${id}.name`, section?.name || "") as string;
@@ -47,29 +49,35 @@ export const SectionOptions = ({ id }: Props) => {
 
   const toggleSeparateLinks = (checked: boolean) => {
     setValue(`sections.${id}.separateLinks`, checked);
+    void flushCommit();
   };
 
   const toggleVisibility = () => {
     setValue(`sections.${id}.visible`, !section.visible);
+    void flushCommit();
   };
 
   const onResetName = () => {
     if (!originalName) return;
     setValue(`sections.${id}.name`, originalName);
+    void flushCommit();
   };
 
   const onChangeColumns = (value: string) => {
     setValue(`sections.${id}.columns`, Number(value));
+    void flushCommit();
   };
 
   const onResetItems = () => {
     if (!hasItems) return;
     setValue(`sections.${id}.items`, []);
+    void flushCommit();
   };
 
   const onRemove = () => {
     if (!isCustomSection) return;
     removeSection(id);
+    void flushCommit();
   };
 
   return (

@@ -80,7 +80,7 @@ export default function PublicResumePage() {
               </span>
             )}
             <br />
-            Template: {resume.data?.metadata?.template || "rhyhorn"}
+            Template: {resume.data?.metadata?.template || "harvard"}
           </div>
         </div>
       </main>

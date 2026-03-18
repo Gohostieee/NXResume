@@ -214,7 +214,7 @@ const Section = <T,>({
                 <Fragment key={item.id}>
                   <div className="text-right font-medium text-primary">{date}</div>
 
-                  <div className="col-span-3 space-y-1">
+                  <div data-resume-item-id={item.id} className="col-span-3 space-y-1">
                     {children?.(item as T)}
 
                     {url !== undefined && section.separateLinks && <Link url={url} />}

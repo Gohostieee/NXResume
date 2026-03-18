@@ -2,24 +2,47 @@ import { create } from "zustand";
 import { useResumeStore } from "./resume";
 import type { Id } from "@/convex/_generated/dataModel";
 
+type SaveDraftArgs = {
+  resumeId: Id<"resumes">;
+  branchId?: Id<"resumeBranches">;
+  snapshot: {
+    title: string;
+    visibility: "public" | "private";
+    data: any;
+  };
+  changedPaths: string[];
+  changeSource: string;
+};
+
+type CommitDraftArgs = {
+  resumeId: Id<"resumes">;
+  branchId?: Id<"resumeBranches">;
+  changeKind?: "manual" | "ai" | "system";
+  changeSource?: string;
+  changedPaths?: string[];
+  message?: string;
+  summary?: string;
+};
+
 type AutoSaveStore = {
   isSaving: boolean;
-  pendingSave: boolean;
+  isCommitting: boolean;
   lastSaved: string;
-  saveFunction: ((args: { id: Id<"resumes">; data: any; title: string; visibility: string }) => Promise<any>) | null;
+  lastCommitted: string;
+  saveFunction: ((args: SaveDraftArgs) => Promise<any>) | null;
+  commitFunction: ((args: CommitDraftArgs) => Promise<any>) | null;
 
-  // Actions
-  setSaveFunction: (fn: (args: { id: Id<"resumes">; data: any; title: string; visibility: string }) => Promise<any>) => void;
-  triggerSave: () => Promise<void>;
-  setIsSaving: (saving: boolean) => void;
+  setSaveFunction: (fn: (args: SaveDraftArgs) => Promise<any>) => void;
+  setCommitFunction: (fn: (args: CommitDraftArgs) => Promise<any>) => void;
   setLastSaved: (data: string) => void;
-  setPendingSave: (pending: boolean) => void;
+  saveDraft: () => Promise<void>;
+  flushCommit: (args?: Omit<CommitDraftArgs, "resumeId" | "branchId">) => Promise<void>;
 };
 
 type ResumeSnapshotInput = {
-  data?: unknown;
   title?: string;
   visibility?: string;
+  data?: unknown;
 };
 
 export const getResumeSnapshot = (resume: ResumeSnapshotInput) =>
@@ -29,66 +52,88 @@ export const getResumeSnapshot = (resume: ResumeSnapshotInput) =>
     visibility: resume.visibility ?? "",
   });
 
+const getCurrentStoreSnapshot = () => {
+  const state = useResumeStore.getState();
+  const workingSnapshot = state.workingSnapshot;
+
+  return {
+    resumeId: (state.resume?.id || state.resume?._id || "") as Id<"resumes">,
+    branchId: state.activeBranch?._id as Id<"resumeBranches"> | undefined,
+    snapshot: workingSnapshot,
+    snapshotKey: workingSnapshot ? getResumeSnapshot(workingSnapshot) : "",
+    changedPaths: state.pendingChangedPaths,
+    changeSource: state.pendingChangeSource ?? "builder_manual",
+  };
+};
+
 export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
   isSaving: false,
-  pendingSave: false,
+  isCommitting: false,
   lastSaved: "",
+  lastCommitted: "",
   saveFunction: null,
+  commitFunction: null,
 
   setSaveFunction: (fn) => set({ saveFunction: fn }),
+  setCommitFunction: (fn) => set({ commitFunction: fn }),
+  setLastSaved: (data) => set({ lastSaved: data, lastCommitted: data }),
 
-  setIsSaving: (saving) => set({ isSaving: saving }),
+  saveDraft: async () => {
+    const { saveFunction, isSaving, lastSaved } = get();
+    if (!saveFunction || isSaving) return;
 
-  setLastSaved: (data) => set({ lastSaved: data }),
-
-  setPendingSave: (pending) => set({ pendingSave: pending }),
-
-  triggerSave: async () => {
-    const { isSaving, saveFunction, lastSaved } = get();
-
-    if (!saveFunction) return;
-
-    if (isSaving) {
-      set({ pendingSave: true });
-      return;
-    }
-
-    const resume = useResumeStore.getState().resume;
-    const resumeId = resume?.id || resume?._id;
-    if (!resumeId || !resume?.data) return;
-
-    const currentData = getResumeSnapshot(resume);
-
-    // Skip if nothing changed
-    if (currentData === lastSaved) return;
+    const current = getCurrentStoreSnapshot();
+    if (!current.resumeId || !current.snapshot) return;
+    if (current.snapshotKey === lastSaved && current.changedPaths.length === 0) return;
 
     set({ isSaving: true });
-
     try {
       await saveFunction({
-        id: resumeId as Id<"resumes">,
-        data: resume.data,
-        title: resume.title,
-        visibility: resume.visibility,
+        resumeId: current.resumeId,
+        branchId: current.branchId,
+        snapshot: current.snapshot,
+        changedPaths: current.changedPaths,
+        changeSource: current.changeSource,
       });
-      set({ lastSaved: currentData, isSaving: false });
-    } catch (error) {
-      console.error("Save failed:", error);
-      set({ isSaving: false });
+      set({ lastSaved: current.snapshotKey });
     } finally {
-      const { pendingSave } = get();
-      if (pendingSave) {
-        set({ pendingSave: false });
-        queueMicrotask(() => {
-          void get().triggerSave();
-        });
-      }
+      set({ isSaving: false });
+    }
+  },
+
+  flushCommit: async (args) => {
+    const { commitFunction, isCommitting } = get();
+    if (!commitFunction || isCommitting) return;
+
+    const current = getCurrentStoreSnapshot();
+    if (!current.resumeId || !current.snapshot) return;
+
+    await get().saveDraft();
+
+    set({ isCommitting: true, isSaving: true });
+    try {
+      await commitFunction({
+        resumeId: current.resumeId,
+        branchId: current.branchId,
+        changeKind: args?.changeKind,
+        changeSource: args?.changeSource ?? current.changeSource,
+        changedPaths: args?.changedPaths ?? current.changedPaths,
+        message: args?.message,
+        summary: args?.summary,
+      });
+      useResumeStore.getState().clearLocalHistory();
+      const snapshotKey = getResumeSnapshot(current.snapshot);
+      set({
+        lastSaved: snapshotKey,
+        lastCommitted: snapshotKey,
+      });
+    } finally {
+      set({ isCommitting: false, isSaving: false });
     }
   },
 }));
 
-// Hook to trigger save - can be used in components
 export const useTriggerSave = () => {
-  const triggerSave = useAutoSaveStore((state) => state.triggerSave);
-  return triggerSave;
+  const flushCommit = useAutoSaveStore((state) => state.flushCommit);
+  return flushCommit;
 };

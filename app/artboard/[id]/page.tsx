@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useQuery } from "convex/react";
 import type { ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { useArtboardStore } from "@/components/artboard/store/artboard";
 import { Page } from "@/components/artboard/components/page";
 import { getTemplate } from "@/components/templates";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { pageSizeMap } from "@/lib/utils";
 import type { Template } from "@/lib/utils";
 import type { ResumeData, SectionKey } from "@/lib/schema";
+import { applyResumeDiffAnnotations, clearResumeDiffAnnotations } from "@/lib/resume/diff-annotations";
+import { createResumeDiffModel } from "@/lib/resume/proposal";
 import {
   FontProvider,
   useFontContext,
@@ -17,27 +22,57 @@ import {
 
 const MM_TO_PX = 3.78;
 
-function ArtboardContent() {
+function ArtboardContent({
+  transformRef,
+  wheelPanning,
+}: {
+  transformRef: React.RefObject<ReactZoomPanPinchRef | null>;
+  wheelPanning: boolean;
+}) {
   const searchParams = useSearchParams();
   const isPrint = searchParams.get("print") === "1";
   const resume = useArtboardStore((state) => state.resume);
-  const [wheelPanning, setWheelPanning] = useState(true);
-  const transformRef = useRef<ReactZoomPanPinchRef>(null);
+  const diffMode = useArtboardStore((state) => state.diffMode);
+  const baseResume = useArtboardStore((state) => state.baseResume);
+  const proposalResume = useArtboardStore((state) => state.proposalResume);
+  const rootRef = useRef<HTMLDivElement>(null);
   const hasCenteredRef = useRef(false);
   const { fontFamily, isLoaded, fontFamilyCSS } = useFontContext();
+  const diffModel = useMemo(
+    () => createResumeDiffModel(baseResume, proposalResume),
+    [baseResume, proposalResume],
+  );
 
-  // Center the view once when resume data is first ready
   useEffect(() => {
+    if (!rootRef.current) return;
+
+    if (!diffMode) {
+      clearResumeDiffAnnotations(rootRef.current);
+      return;
+    }
+
+    const rafId = window.requestAnimationFrame(() => {
+      applyResumeDiffAnnotations(rootRef.current, diffModel);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [diffMode, diffModel]);
+
+  // Center the view once when resume data is first ready.
+  useEffect(() => {
+    if (isPrint) return;
+
     if (transformRef.current && !hasCenteredRef.current) {
       hasCenteredRef.current = true;
-      // Small delay to ensure content is rendered
       setTimeout(() => {
         transformRef.current?.centerView(0.8, 0);
       }, 100);
     }
-  }, []);
+  }, [isPrint, transformRef]);
 
-  const templateName = (resume.metadata?.template || "rhyhorn") as Template;
+  const templateName = (resume.metadata?.template || "harvard") as Template;
   const TemplateComponent = getTemplate(templateName);
   const layout = resume.metadata?.layout || [[[]]];
   const pageFormat = resume.metadata?.page?.format || "a4";
@@ -374,6 +409,27 @@ function ArtboardContent() {
         .picture-hidden {
           display: none;
         }
+
+        .resume-diff-inline {
+          background: rgba(34, 197, 94, 0.14);
+          color: #166534;
+          border-radius: 0.18rem;
+          padding: 0 0.12em;
+        }
+
+        .resume-diff-block {
+          background: rgba(34, 197, 94, 0.09);
+          color: #166534;
+          border-radius: 0.5rem;
+          box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2);
+          padding: 0.35rem 0.45rem;
+        }
+
+        .resume-diff-page {
+          box-shadow:
+            0 25px 50px -12px rgba(0, 0, 0, 0.25),
+            inset 0 0 0 2px rgba(34, 197, 94, 0.18);
+        }
       `}</style>
 
       {/* Font loading indicator (hidden, used by Puppeteer for PDF generation) */}
@@ -383,54 +439,85 @@ function ArtboardContent() {
         style={{ display: "none" }}
       />
 
-      <TransformWrapper
-        ref={transformRef}
-        centerOnInit
-        maxScale={2}
-        minScale={0.4}
-        initialScale={0.8}
-        limitToBounds={false}
-        wheel={{ wheelDisabled: wheelPanning }}
-        panning={{ wheelPanning }}
-      >
-        <TransformComponent
-          wrapperClass="!w-screen !h-screen"
-          contentClass="artboard-container"
-        >
-          {layout.map((columns, pageIndex) => (
-            <Page
-              key={pageIndex}
-              mode={isPrint ? "preview" : "builder"}
-              pageNumber={pageIndex + 1}
-              className="page"
-              style={{
-                width: `${pageSize.width * MM_TO_PX}px`,
-                minHeight: `${pageSize.height * MM_TO_PX}px`,
-              }}
+      <div ref={rootRef}>
+        {isPrint ? (
+          <div className="artboard-container">
+            {layout.map((columns, pageIndex) => (
+              <Page
+                key={pageIndex}
+                mode="preview"
+                pageNumber={pageIndex + 1}
+                className="page"
+                style={{
+                  width: `${pageSize.width * MM_TO_PX}px`,
+                  minHeight: `${pageSize.height * MM_TO_PX}px`,
+                }}
+              >
+                <TemplateComponent
+                  columns={columns as [SectionKey[], SectionKey[]]}
+                  isFirstPage={pageIndex === 0}
+                />
+              </Page>
+            ))}
+          </div>
+        ) : (
+          <TransformWrapper
+            ref={transformRef}
+            centerOnInit
+            maxScale={2}
+            minScale={0.4}
+            initialScale={0.8}
+            limitToBounds={false}
+            wheel={{ wheelDisabled: wheelPanning }}
+            panning={{ wheelPanning }}
+          >
+            <TransformComponent
+              wrapperClass="!w-screen !h-screen"
+              contentClass="artboard-container"
             >
-              <TemplateComponent
-                columns={columns as [SectionKey[], SectionKey[]]}
-                isFirstPage={pageIndex === 0}
-              />
-            </Page>
-          ))}
-        </TransformComponent>
-      </TransformWrapper>
+              {layout.map((columns, pageIndex) => (
+                <Page
+                  key={pageIndex}
+                  mode="builder"
+                  pageNumber={pageIndex + 1}
+                  className="page"
+                  style={{
+                    width: `${pageSize.width * MM_TO_PX}px`,
+                    minHeight: `${pageSize.height * MM_TO_PX}px`,
+                  }}
+                >
+                  <TemplateComponent
+                    columns={columns as [SectionKey[], SectionKey[]]}
+                    isFirstPage={pageIndex === 0}
+                  />
+                </Page>
+              ))}
+            </TransformComponent>
+          </TransformWrapper>
+        )}
+      </div>
     </>
   );
 }
 
 export default function ArtboardPage() {
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const isPrint = searchParams.get("print") === "1";
   const resume = useArtboardStore((state) => state.resume);
   const setResume = useArtboardStore((state) => state.setResume);
+  const setPreviewState = useArtboardStore((state) => state.setPreviewState);
+  const resumeRecord = useQuery(
+    api.resumes.getById,
+    isPrint ? "skip" : { id: params.id as Id<"resumes"> },
+  );
   const [isReady, setIsReady] = useState(false);
+  const [hasBootstrapped, setHasBootstrapped] = useState(false);
   const [wheelPanning, setWheelPanning] = useState(true);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
 
-  const fontFamily =
-    resume.metadata?.typography?.font?.family || "IBM Plex Sans";
+  const fontFamily = resume.metadata?.typography?.font?.family || "IBM Plex Sans";
 
-  // Listen for postMessage from parent window
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
@@ -441,6 +528,18 @@ export default function ArtboardPage() {
       ) {
         const resumeData = event.data.payload as ResumeData;
         setResume(resumeData);
+        setIsReady(true);
+      }
+
+      if (event.data?.type === "RESUME_PREVIEW_STATE") {
+        const payload = event.data.payload as {
+          currentResume: ResumeData;
+          baseResume?: ResumeData | null;
+          proposalResume?: ResumeData | null;
+          diffMode?: boolean;
+        };
+
+        setPreviewState(payload);
         setIsReady(true);
       }
 
@@ -457,8 +556,6 @@ export default function ArtboardPage() {
     };
 
     window.addEventListener("message", handleMessage);
-
-    // Notify parent that artboard is ready to receive data
     window.parent.postMessage({ type: "ARTBOARD_READY" }, "*");
 
     const storedResume = window.localStorage.getItem("resume");
@@ -472,22 +569,50 @@ export default function ArtboardPage() {
       }
     }
 
+    setHasBootstrapped(true);
+
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [setResume]);
+  }, [setPreviewState, setResume]);
+
+  useEffect(() => {
+    if (!resumeRecord?.data || isReady) return;
+
+    setResume(resumeRecord.data);
+    setIsReady(true);
+  }, [isReady, resumeRecord, setResume]);
+
+  if (!hasBootstrapped || (!isPrint && resumeRecord === undefined)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-secondary/30 px-6">
+        <div className="text-sm text-foreground/70">Loading artboard...</div>
+      </div>
+    );
+  }
 
   if (!isReady) {
+    const isUnavailable = !isPrint && resumeRecord === null;
+
     return (
-      <div style={{ color: "white", padding: "2rem" }}>
-        Waiting for resume data...
+      <div className="flex min-h-screen items-center justify-center bg-secondary/30 px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-lg font-semibold text-foreground">
+            {isUnavailable ? "Resume unavailable" : "Waiting for resume data"}
+          </h1>
+          <p className="mt-2 text-sm text-foreground/70">
+            {isUnavailable
+              ? "This resume could not be loaded from the current session."
+              : "Open this route from the builder or provide resume data via postMessage/localStorage."}
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <FontProvider fontFamily={fontFamily}>
-      <ArtboardContent />
+      <ArtboardContent transformRef={transformRef} wheelPanning={wheelPanning} />
     </FontProvider>
   );
 }

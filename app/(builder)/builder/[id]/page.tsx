@@ -15,11 +15,12 @@ export default function BuilderPage() {
   const [hasWaitedForAuth, setHasWaitedForAuth] = useState(false);
 
   // Only query when auth is loaded
-  const resume = useQuery(
-    api.resumes.getById,
+  const ensureHistory = useMutation(api.resumes.ensureHistory);
+  const builderState = useQuery(
+    api.resumes.getBuilderState,
     isAuthLoaded && isSignedIn ? { id: params.id as Id<"resumes"> } : "skip"
   );
-  const setResume = useResumeStore((state) => state.setResume);
+  const setBuilderState = useResumeStore((state) => state.setBuilderState);
   const hasResumeInStore = useResumeStore((state) => Boolean(state.resume?.data));
   const lastResumeIdRef = useRef<string | null>(null);
 
@@ -34,15 +35,23 @@ export default function BuilderPage() {
 
   // Sync resume to store when loaded
   useEffect(() => {
-    if (resume) {
-      setResume(resume as any);
-      const resumeId = (resume as { id?: string; _id?: string }).id ?? (resume as { _id?: string })._id ?? null;
+    if (builderState?.resume) {
+      setBuilderState(builderState as any);
+      const resumeId =
+        (builderState.resume as { id?: string; _id?: string }).id ??
+        (builderState.resume as { _id?: string })._id ??
+        null;
       if (resumeId && lastResumeIdRef.current !== resumeId) {
-        useResumeStore.temporal.getState().clear();
         lastResumeIdRef.current = resumeId;
       }
     }
-  }, [resume, setResume]);
+  }, [builderState, setBuilderState]);
+
+  useEffect(() => {
+    if (!isAuthLoaded || !isSignedIn) return;
+    if (builderState === undefined || builderState?.historyReady !== false) return;
+    void ensureHistory({ id: params.id as Id<"resumes"> });
+  }, [builderState, ensureHistory, isAuthLoaded, isSignedIn, params.id]);
 
   // Show loading while auth is loading
   if (!isAuthLoaded || !hasWaitedForAuth) {
@@ -64,7 +73,7 @@ export default function BuilderPage() {
   }
 
   // Query is loading
-  if (resume === undefined && !hasResumeInStore) {
+  if (builderState === undefined && !hasResumeInStore) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-foreground/60">Loading resume...</div>
@@ -73,7 +82,7 @@ export default function BuilderPage() {
   }
 
   // Resume not found or no access
-  if (resume === null) {
+  if (builderState === null) {
     return (
       <div className="flex h-screen flex-col items-center justify-center">
         <h1 className="text-2xl font-bold">Resume Not Found</h1>
@@ -84,5 +93,5 @@ export default function BuilderPage() {
     );
   }
 
-  return <BuilderLayout resume={resume} />;
+  return <BuilderLayout resume={builderState?.resume} />;
 }

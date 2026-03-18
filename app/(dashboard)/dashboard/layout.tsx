@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { Briefcase, FileText, GearSix, House, UserCircle } from "@phosphor-icons/react";
+import { Briefcase, FileText, GearSix, House, MagnifyingGlass, UserCircle } from "@phosphor-icons/react";
 import { cn } from "@reactive-resume/utils";
 
 const navigation = [
   { name: "Resumes", href: "/dashboard/resumes", icon: FileText },
+  { name: "Jobs", href: "/dashboard/jobs", icon: MagnifyingGlass },
   { name: "Applications", href: "/dashboard/applications", icon: Briefcase },
   { name: "Profile", href: "/dashboard/profile", icon: UserCircle },
   { name: "Settings", href: "/dashboard/settings", icon: GearSix },

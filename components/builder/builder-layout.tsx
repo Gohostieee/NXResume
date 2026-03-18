@@ -7,6 +7,7 @@ import { PreviewPanel } from "./preview-panel";
 import { AutoSave } from "./auto-save";
 import { BuilderHeader } from "./builder-header";
 import { BuilderBottomDock } from "./bottom-dock";
+import { ProposalBanner } from "./proposal-banner";
 import { Panel, PanelGroup, PanelResizeHandle } from "@/components/ui/resizable-panel";
 import {
   Sheet,
@@ -27,6 +28,7 @@ const CenterSlot = () => (
   <div className="relative flex h-full flex-col">
     <AutoSave />
     <BuilderHeader />
+    <ProposalBanner />
     <PreviewPanel />
     <BuilderBottomDock />
   </div>

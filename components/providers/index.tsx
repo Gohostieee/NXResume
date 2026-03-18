@@ -3,7 +3,7 @@
 import { ReactNode } from "react";
 import { ConvexClientProvider } from "./convex-provider";
 import { UserSync } from "./user-sync";
-import { TooltipProvider } from "../ui";
+import { Toaster, TooltipProvider } from "../ui";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -11,6 +11,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <TooltipProvider>
         <UserSync />
         {children}
+        <Toaster />
       </TooltipProvider>
     </ConvexClientProvider>
   );
